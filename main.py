@@ -1,75 +1,74 @@
 import os
-import asyncio
 from flask import Flask, request
-from telegram import Update
-from telegram.ext import Application, MessageHandler, filters
-from google import genai
+from groq import Groq
+import telegram
 
 app = Flask(__name__)
 
+# Configurações usando variáveis de ambiente do Render
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
-# Configuração correta com o client do Google GenAI
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Inicializa o cliente da Groq e o bot do Telegram
+client = Groq(api_key=GROQ_API_KEY)
+bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
-# Criamos o loop principal da aplicação e a instância do bot
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
+# Histórico simples de conversas por chat_id
+historico_conversas = {}
 
-application = Application.builder().token(TELEGRAM_TOKEN).updater(None).build()
-
-async def handle_message(update: Update, context):
-    user_message = update.message.text
-    chat_id = update.message.chat_id
-    
-    try:
-        response = client.interactions.create(
-            model="gemini-2.5-flash",  # Ajustado para um modelo padrão estável atual
-            input=user_message
-        )
-        bot_reply = response.output_text
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        bot_reply = f"Erro técnico: {str(e)}"
-
-    await context.bot.send_message(chat_id=chat_id, text=bot_reply)
-
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-# Inicializamos o bot de forma assíncrona logo na subida do script
-async def setup_bot():
-    await application.initialize()
-    if RENDER_EXTERNAL_URL:
-        webhook_url = f"{RENDER_EXTERNAL_URL}/{TELEGRAM_TOKEN}"
-        await application.bot.set_webhook(url=webhook_url)
-        print(f"Webhook configurado para: {webhook_url}")
-
-loop.run_until_complete(setup_bot())
-
-@app.route("/")
-def home():
-    return "Bot do Laboratório está ativo e online via Webhook!"
+# System Prompt para definir a personalidade de assistente programador avançado
+SYSTEM_PROMPT = {
+    "role": "system",
+    "content": "Você é um assistente virtual avançado, programador sênior e arquiteto de software. Você ajuda o usuário a criar códigos, estruturar sites, debugar erros e planejar melhorias, respondendo de forma direta, clara e prática pelo Telegram."
+}
 
 @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
 def webhook():
-    try:
-        json_data = request.get_json(force=True)
-        update = Update.de_json(json_data, application.bot)
+    update = request.get_json()
+    
+    if "message" in update:
+        message = update["message"]
+        chat_id = message["chat"]["id"]
+        texto_usuario = message.get("text")
         
-        # Executa o update utilizando o event loop global existente sem fechá-lo
-        future = asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
-        future.result(timeout=30) # Aguarda o processamento com segurança
-        
-    except Exception as e:
-        print(f"Erro no webhook: {e}")
-        import traceback
-        traceback.print_exc()
+        if texto_usuario:
+            # 1. Inicializa o histórico do chat se ele não existir
+            if chat_id not in historico_conversas:
+                historico_conversas[chat_id] = [SYSTEM_PROMPT]
+            
+            # 2. Adiciona a mensagem do usuário
+            historico_conversas[chat_id].append({"role": "user", "content": texto_usuario})
+            
+            # Limita o histórico para manter o system prompt + últimas 10 mensagens
+            if len(historico_conversas[chat_id]) > 11:
+                historico_conversas[chat_id] = [historico_conversas[chat_id][0]] + historico_conversas[chat_id][-10:]
 
-    return "ok", 200
+            try:
+                # 3. Chama a API da Groq com o modelo Llama 3.3 70B
+                chat_completion = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=historico_conversas[chat_id],
+                    temperature=0.7,
+                    max_tokens=1500
+                )
+                
+                resposta_ia = chat_completion.choices[0].message.content
+                
+                # 4. Adiciona a resposta da IA ao histórico
+                historico_conversas[chat_id].append({"role": "assistant", "content": resposta_ia})
+                
+                # 5. Envia a resposta de volta para o Telegram
+                bot.send_message(chat_id=chat_id, text=resposta_ia)
+                
+            except Exception as e:
+                print(f"Erro ao chamar a Groq: {e}")
+                bot.send_message(chat_id=chat_id, text="Opa, tive um pequeno problema ao processar sua resposta na Groq. Tente novamente em instantes!")
+
+    return "OK", 200
+
+@app.route("/", methods=["GET"])
+def index():
+    return "Bot do Telegram com Groq rodando perfeitamente!", 200
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
