@@ -97,7 +97,7 @@ def webhook():
         try:
             chat_completion = client.chat.completions.create(
                 messages=current_history,
-                model="gemma2-9b-it", # Modelo ultra-compatível e super inteligente da Google na Groq
+                model="llama-3.1-8b-instant", # Modelo oficial ativo na Groq
             )
             
             reply_text = chat_completion.choices[0].message.content
@@ -113,11 +113,10 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 2 (Gemma Edition) rodando com sucesso!", 200
+    return "Robozim 2 rodando com sucesso!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
 
 
 
