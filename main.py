@@ -61,7 +61,7 @@ def webhook():
         
         # Executa o update utilizando o event loop global existente sem fechá-lo
         future = asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
-        future.result(timeout=10) # Aguarda o processamento com segurança
+        future.result(timeout=30) # Aguarda o processamento com segurança
         
     except Exception as e:
         print(f"Erro no webhook: {e}")
