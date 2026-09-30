@@ -52,7 +52,7 @@ def get_chat_history(chat_id):
     cursor.close()
     conn.close()
 
-    # Personalidade: Programador, Sarcástico e Brincalhão (indentação corrigida)
+    # Personalidade: Programador, Sarcástico e Brincalhão
     system_prompt = (
         "Você é o Robozim 2, um assistente virtual que é um amigo programador altamente inteligente, "
         "extremamente brincalhão, espirituoso e com um toque saudável de sarcasmo. "
@@ -97,7 +97,7 @@ def webhook():
         try:
             chat_completion = client.chat.completions.create(
                 messages=current_history,
-                model="llama-3.3-70b-versatile", # O cérebro potente da Llama
+                model="llama-3.1-70b-versatile", # Modelo atualizado e 100% compatível
             )
             
             reply_text = chat_completion.choices[0].message.content
@@ -113,7 +113,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 2 (Full Power & Sarcastic Coder Edition) rodando com sucesso!", 200
+    return "Robozim 2 (Stable Llama Edition) rodando com sucesso!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
