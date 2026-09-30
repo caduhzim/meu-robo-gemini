@@ -1,8 +1,6 @@
 import os
-import asyncio
-from flask import Flask, request
-from telegram import Bot, Update
-from telegram.ext import Application, MessageHandler, filters
+import requests
+from flask import Flask, request as flask_request
 from groq import Groq
 
 # Configuração das chaves via Variáveis de Ambiente do Render
@@ -13,15 +11,26 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 app = Flask(__name__)
 client = Groq(api_key=GROQ_API_KEY)
 
-# Configuração moderna do Bot do Telegram
-application = Application.builder().token(TELEGRAM_TOKEN).build()
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
-async def handle_message(update: Update, context):
-    user_message = update.message.text
-    chat_id = update.message.chat_id
+def send_telegram_message(chat_id, text):
+    payload = {
+        "chat_id": chat_id,
+        "text": text
+    }
+    requests.post(TELEGRAM_API_URL, json=payload)
 
-    if user_message:
+@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
+def webhook():
+    data = flask_request.get_json(force=True)
+    
+    # Verifica se é uma mensagem de texto válida do Telegram
+    if "message" in data and "text" in data["message"]:
+        chat_id = data["message"]["chat"]["id"]
+        user_message = data["message"]["text"]
+        
         try:
+            # Chamada para a API da Groq (Llama 3.3 70B)
             chat_completion = client.chat.completions.create(
                 messages=[
                     {
@@ -32,25 +41,13 @@ async def handle_message(update: Update, context):
                 model="llama-3.3-70b-versatile",
             )
             reply_text = chat_completion.choices[0].message.content
-            await update.message.reply_text(reply_text)
+            send_telegram_message(chat_id, reply_text)
             
         except Exception as e:
             error_msg = f"Erro detalhado da Groq: {str(e)}"
             print(error_msg)
-            await update.message.reply_text(error_msg)
-
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-async def process_telegram_update(json_data):
-    # Inicializa e processa o update devidamente de forma assíncrona
-    await application.initialize()
-    update = Update.de_json(json_data, application.bot)
-    await application.process_update(update)
-
-@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
-def webhook():
-    json_data = request.get_json(force=True)
-    asyncio.run(process_telegram_update(json_data))
+            send_telegram_message(chat_id, error_msg)
+            
     return "ok", 200
 
 @app.route("/", methods=["GET"])
