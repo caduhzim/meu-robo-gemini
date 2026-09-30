@@ -1,4 +1,5 @@
 import os
+import asyncio
 from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Application, MessageHandler, filters
@@ -12,7 +13,7 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 app = Flask(__name__)
 client = Groq(api_key=GROQ_API_KEY)
 
-# Configuração moderna do Bot do Telegram usando Application
+# Configuração moderna do Bot do Telegram
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
 async def handle_message(update: Update, context):
@@ -21,7 +22,6 @@ async def handle_message(update: Update, context):
 
     if user_message:
         try:
-            # Chamada para a API da Groq usando o modelo Llama 3.3 70B
             chat_completion = client.chat.completions.create(
                 messages=[
                     {
@@ -39,19 +39,18 @@ async def handle_message(update: Update, context):
             print(error_msg)
             await update.message.reply_text(error_msg)
 
-# Adiciona o manipulador de mensagens compatível
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+async def process_telegram_update(json_data):
+    # Inicializa e processa o update devidamente de forma assíncrona
+    await application.initialize()
+    update = Update.de_json(json_data, application.bot)
+    await application.process_update(update)
 
 @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
 def webhook():
-    # Processa o update de forma assíncrona ou direta para Render
     json_data = request.get_json(force=True)
-    update = Update.de_json(json_data, application.bot)
-    
-    # Executa o processamento da mensagem no event loop
-    import asyncio
-    asyncio.run(application.process_update(update))
-    
+    asyncio.run(process_telegram_update(json_data))
     return "ok", 200
 
 @app.route("/", methods=["GET"])
