@@ -1,7 +1,7 @@
 import os
 from flask import Flask, request
 from telegram import Bot, Update
-from telegram.ext import Dispatcher, MessageHandler, Filters
+from telegram.ext import Application, MessageHandler, filters
 from groq import Groq
 
 # Configuração das chaves via Variáveis de Ambiente do Render
@@ -12,13 +12,12 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 app = Flask(__name__)
 client = Groq(api_key=GROQ_API_KEY)
 
-# Configuração do Bot do Telegram
-bot = Bot(token=TELEGRAM_TOKEN)
-dispatcher = Dispatcher(bot, None, use_context=True)
+# Configuração moderna do Bot do Telegram usando Application
+application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-def handle_message(update, context):
-    chat_id = update.message.chat_id
+async def handle_message(update: Update, context):
     user_message = update.message.text
+    chat_id = update.message.chat_id
 
     if user_message:
         try:
@@ -33,21 +32,26 @@ def handle_message(update, context):
                 model="llama-3.3-70b-versatile",
             )
             reply_text = chat_completion.choices[0].message.content
-            bot.send_message(chat_id=chat_id, text=reply_text)
+            await update.message.reply_text(reply_text)
             
         except Exception as e:
-            # Mostra o erro técnico exato no Telegram para sabermos o motivo exato da falha
             error_msg = f"Erro detalhado da Groq: {str(e)}"
             print(error_msg)
-            bot.send_message(chat_id=chat_id, text=error_msg)
+            await update.message.reply_text(error_msg)
 
-# Adiciona o manipulador de mensagens de texto
-dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+# Adiciona o manipulador de mensagens compatível
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
 def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    dispatcher.process_update(update)
+    # Processa o update de forma assíncrona ou direta para Render
+    json_data = request.get_json(force=True)
+    update = Update.de_json(json_data, application.bot)
+    
+    # Executa o processamento da mensagem no event loop
+    import asyncio
+    asyncio.run(application.process_update(update))
+    
     return "ok", 200
 
 @app.route("/", methods=["GET"])
