@@ -16,7 +16,8 @@ client = Groq(api_key=GROQ_API_KEY)
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
 def get_db_connection():
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg2.connect(DATABASE_URL, sslmode='require')
+
 
 def init_db():
     conn = get_db_connection()
