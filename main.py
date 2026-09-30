@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import requests
 from flask import Flask, request as flask_request
 from groq import Groq
@@ -13,9 +14,57 @@ client = Groq(api_key=GROQ_API_KEY)
 
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
-# Dicionário para armazenar o histórico de conversas por chat_id
-# Cada chat terá uma lista de mensagens (máximo de 10 mensagens para não sobrecarregar)
-conversations = {}
+# Configuração da Base de Dados SQLite
+DB_NAME = "bot_memory.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    # Tabela para guardar as mensagens de cada chat
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id TEXT,
+            role TEXT,
+            content TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# Inicializa a base de dados ao arrancar a aplicação
+init_db()
+
+def get_chat_history(chat_id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id ASC", (str(chat_id),))
+    rows = cursor.fetchall()
+    conn.close()
+
+    # Mensagem de sistema padrão no início
+    history = [{"role": "system", "content": "Você é um assistente útil, amigável e conciso."}]
+    
+    for row in rows:
+        history.append({"role": row[0], "content": row[1]})
+        
+    return history
+
+def save_message(chat_id, role, content):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)", (str(chat_id), role, content))
+    conn.commit()
+    
+    # Mantém apenas as últimas 12 mensagens por chat para não inchar a base de dados nem exceder tokens
+    cursor.execute("""
+        DELETE FROM messages WHERE id NOT IN (
+            SELECT id FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 12
+        ) AND chat_id = ?
+    """, (str(chat_id), str(chat_id)))
+    
+    conn.commit()
+    conn.close()
 
 def send_telegram_message(chat_id, text):
     payload = {
@@ -32,31 +81,23 @@ def webhook():
         chat_id = data["message"]["chat"]["id"]
         user_message = data["message"]["text"]
         
-        # Inicializa o histórico deste chat se ele não existir
-        if chat_id not in conversations:
-            conversations[chat_id] = [
-                {"role": "system", "content": "Você é um assistente útil, amigável e conciso."}
-            ]
-            
-        # Adiciona a mensagem do utilizador ao histórico
-        conversations[chat_id].append({"role": "user", "content": user_message})
+        # Guarda a mensagem do utilizador na BD
+        save_message(chat_id, "user", user_message)
         
-        # Mantém apenas as últimas 10 mensagens para evitar estouro de tokens
-        if len(conversations[chat_id]) > 11:  # 1 system + 10 interações
-            # Mantém a regra do sistema (índice 0) e as últimas 10 mensagens
-            conversations[chat_id] = [conversations[chat_id][0]] + conversations[chat_id][-10:]
+        # Recupera o histórico completo deste chat
+        current_history = get_chat_history(chat_id)
         
         try:
-            # Envia todo o histórico para a Groq
+            # Envia o histórico completo para a Groq
             chat_completion = client.chat.completions.create(
-                messages=conversations[chat_id],
+                messages=current_history,
                 model="openai/gpt-oss-20b",
             )
             
             reply_text = chat_completion.choices[0].message.content
             
-            # Adiciona a resposta do bot ao histórico para manter o contexto
-            conversations[chat_id].append({"role": "assistant", "content": reply_text})
+            # Guarda a resposta do assistente na BD
+            save_message(chat_id, "assistant", reply_text)
             
             # Envia a resposta de volta ao Telegram
             send_telegram_message(chat_id, reply_text)
@@ -70,7 +111,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Bot da Groq com memória rodando com sucesso!", 200
+    return "Bot da Groq com SQLite rodando com sucesso!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
