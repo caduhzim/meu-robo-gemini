@@ -1,5 +1,4 @@
 import os
-import asyncio
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters
@@ -14,6 +13,7 @@ RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
+# Inicializa a aplicação sem updater
 application = Application.builder().token(TELEGRAM_TOKEN).updater(None).build()
 
 async def handle_message(update: Update, context):
@@ -41,21 +41,14 @@ def webhook():
         json_data = request.get_json(force=True)
         update = Update.de_json(json_data, application.bot)
         
-        # Obtém ou cria um loop de eventos seguro para a thread atual do Flask
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                raise RuntimeError()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-        # Inicializa e processa o update sem fechar o loop global
-        async def run_async():
+        # Abordagem segura para processar o update usando o método nativo da lib
+        import asyncio
+        async def process():
             await application.initialize()
             await application.process_update(update)
             
-        loop.run_until_complete(run_async())
+        # Executa de forma isolada e limpa
+        asyncio.run(process())
     except Exception as e:
         print(f"Erro no webhook: {e}")
 
