@@ -12,7 +12,8 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+# Modelo atualizado e correto
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 application = Application.builder().token(TELEGRAM_TOKEN).updater(None).build()
 
