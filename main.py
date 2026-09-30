@@ -4,7 +4,7 @@ import threading
 import time
 import os
 
-# Cria um servidor HTTP simples em segundo plano para o Render aceitar o Web Service gratuito
+# Servidor Web para manter o serviço gratuito do Render ativo
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
     handler = http.server.SimpleHTTPRequestHandler
@@ -13,9 +13,9 @@ def run_web_server():
 
 threading.Thread(target=run_web_server, daemon=True).start()
 
-# O TEU CÓDIGO DO GEMINI COMEÇA AQUI:
-print("Robô Gemini iniciado com sucesso!")
+print("Robô Gemini iniciado e rodando na nuvem!")
 
+# Lógica do robô em loop contínuo
 while True:
-    # Coloca aqui a lógica principal do teu robô
-    time.sleep(60)
+    print("Robô ativo e aguardando tarefas...")
+    time.sleep(60)  # Aguarda 60 segundos antes de cada ciclo
