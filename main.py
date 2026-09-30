@@ -11,8 +11,12 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
-# Configuração correta com o novo client do Google GenAI
+# Configuração correta com o client do Google GenAI
 client = genai.Client(api_key=GEMINI_API_KEY)
+
+# Criamos o loop principal da aplicação e a instância do bot
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
 application = Application.builder().token(TELEGRAM_TOKEN).updater(None).build()
 
@@ -21,9 +25,8 @@ async def handle_message(update: Update, context):
     chat_id = update.message.chat_id
     
     try:
-        # Usando a Interactions API recomendada com o modelo atual
         response = client.interactions.create(
-            model="gemini-3.8-flash",
+            model="gemini-2.5-flash",  # Ajustado para um modelo padrão estável atual
             input=user_message
         )
         bot_reply = response.output_text
@@ -36,6 +39,16 @@ async def handle_message(update: Update, context):
 
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+# Inicializamos o bot de forma assíncrona logo na subida do script
+async def setup_bot():
+    await application.initialize()
+    if RENDER_EXTERNAL_URL:
+        webhook_url = f"{RENDER_EXTERNAL_URL}/{TELEGRAM_TOKEN}"
+        await application.bot.set_webhook(url=webhook_url)
+        print(f"Webhook configurado para: {webhook_url}")
+
+loop.run_until_complete(setup_bot())
+
 @app.route("/")
 def home():
     return "Bot do Laboratório está ativo e online via Webhook!"
@@ -46,23 +59,17 @@ def webhook():
         json_data = request.get_json(force=True)
         update = Update.de_json(json_data, application.bot)
         
-        async def process():
-            await application.initialize()
-            await application.process_update(update)
-            
-        asyncio.run(process())
+        # Executa o update utilizando o event loop global existente sem fechá-lo
+        future = asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
+        future.result(timeout=10) # Aguarda o processamento com segurança
+        
     except Exception as e:
         print(f"Erro no webhook: {e}")
+        import traceback
+        traceback.print_exc()
 
     return "ok", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    
-    if RENDER_EXTERNAL_URL:
-        webhook_url = f"{RENDER_EXTERNAL_URL}/{TELEGRAM_TOKEN}"
-        import requests
-        requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook?url={webhook_url}")
-        print(f"Webhook configurado para: {webhook_url}")
-
     app.run(host="0.0.0.0", port=port)
