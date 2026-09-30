@@ -36,7 +36,7 @@ def webhook():
                         "content": user_message,
                     }
                 ],
-                model="llama-3.1-8b-instant",
+                model="openai/gpt-oss-20b",
             )
             reply_text = chat_completion.choices[0].message.content
             send_telegram_message(chat_id, reply_text)
@@ -54,3 +54,4 @@ def index():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
