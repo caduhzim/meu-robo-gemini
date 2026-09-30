@@ -4,12 +4,10 @@ import requests
 from flask import Flask, request as flask_request
 from groq import Groq
 
-# Configuração das chaves via Variáveis de Ambiente do Render
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# Inicializa o Flask e o cliente da Groq
 app = Flask(__name__)
 client = Groq(api_key=GROQ_API_KEY)
 
@@ -38,7 +36,6 @@ init_db()
 def get_chat_history(chat_id):
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Pega as últimas 12 mensagens para a IA ter o contexto recente
     cursor.execute("""
         SELECT role, content FROM (
             SELECT role, content, id FROM messages 
@@ -52,7 +49,6 @@ def get_chat_history(chat_id):
     cursor.close()
     conn.close()
 
-    # Personalidade: Programador, Sarcástico e Brincalhão
     system_prompt = (
         "Você é o Robozim 2, um assistente virtual que é um amigo programador altamente inteligente, "
         "extremamente brincalhão, espirituoso e com um toque saudável de sarcasmo. "
@@ -70,7 +66,6 @@ def get_chat_history(chat_id):
 def save_message(chat_id, role, content):
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Guarda TUDO na tabela do Supabase de forma permanente
     cursor.execute("INSERT INTO messages (chat_id, role, content) VALUES (%s, %s, %s)", (str(chat_id), role, content))
     conn.commit()
     cursor.close()
@@ -97,7 +92,7 @@ def webhook():
         try:
             chat_completion = client.chat.completions.create(
                 messages=current_history,
-                model="llama3-8b-8192", # Modelo clássico ultra-estável da Groq
+                model="llama3-8b-8192", # Modelo clássico de alta compatibilidade
             )
             
             reply_text = chat_completion.choices[0].message.content
@@ -113,8 +108,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 2 (Stable Llama3 Edition) rodando com sucesso!", 200
+    return "Robozim 2 rodando com sucesso!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
