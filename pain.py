@@ -97,7 +97,7 @@ def webhook():
         try:
             chat_completion = client.chat.completions.create(
                 messages=current_history,
-                model="llama-3.1-8b-instant", # Modelo ultra-rápido e compatível com todas as chaves
+                model="llama-3.1-8b", # Modelo padrão compatível com a API da Groq
             )
             
             reply_text = chat_completion.choices[0].message.content
@@ -113,7 +113,8 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 2 (Instant Llama Edition) rodando com sucesso!", 200
+    return "Robozim 2 rodando com sucesso!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
