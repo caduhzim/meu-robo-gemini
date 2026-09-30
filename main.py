@@ -1,80 +1,66 @@
 import os
-import threading
-from flask import Flask
+from flask import Flask, request
+from telegram import Update
+from telegram.ext import Application, ContextTypes, MessageHandler, filters
+# Importe aqui a biblioteca do Gemini que você está a utilizar (ex: google.generativeai)
 import google.generativeai as genai
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
-# 1. Mini-servidor Web para o Render (Health Check HTTP)
-app = Flask('')
+app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return "Bot ativo com Gemini 3.8 Flash!"
-
-def run_web_server():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
-
-threading.Thread(target=run_web_server, daemon=True).start()
-
-# 2. Configuração do Gemini e Telegram Bot
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+# Configurações de Tokens (pegando das variáveis de ambiente do Render)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL") # URL do seu serviço no Render (ex: https://seu-bot.onrender.com)
 
+# Configurar o Gemini
 genai.configure(api_key=GEMINI_API_KEY)
+# Usando o modelo atualizado conforme conversamos
+model = genai.GenerativeModel('gemini-1.5-flash')
 
-# Personalidade do robô
-PERSONALIDADE = """
-És o Jarvis, um assistente virtual altamente inteligente, amigável, curioso e atencioso.
-Gostas de aprender coisas novas sobre o utilizador e lembras-te sempre do contexto da conversa.
-Responde de forma clara, prestativa e engajante em Português.
-"""
+# Inicializar a aplicação do Telegram sem usar Polling
+# O segredo para o Webhook no PTB v20+ é construir a aplicação mas NÃO iniciar o updater local
+application = Application.builder().token(TELEGRAM_TOKEN).updater(None).build()
 
-# Mantido o modelo gemini-3.8-flash
-model = genai.GenerativeModel(
-    model_name='gemini-3.8-flash',
-    system_instruction=PERSONALIDADE
-)
-
-# Dicionário para guardar as sessões de chat de cada utilizador
-user_chats = {}
-
-async def start(update, context):
-    user_id = update.effective_user.id
-    # Cria uma nova conversa limpa
-    user_chats[user_id] = model.start_chat(history=[])
+# Função que lida com as mensagens recebidas
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_message = update.message.text
+    chat_id = update.message.chat_id
     
-    welcome_msg = "Olá Carlos! Eu sou o Jarvis. A minha memória e personalidade estão totalmente ativas com o Gemini 3.8 Flash! Do que gostarias de falar?"
-    await update.message.reply_text(welcome_msg)
-
-async def handle_message(update, context):
-    user_id = update.effective_user.id
-    user_text = update.message.text
-
-    # Se a sessão ainda não existir, cria uma
-    if user_id not in user_chats:
-        user_chats[user_id] = model.start_chat(history=[])
-
     try:
-        chat = user_chats[user_id]
-        response = chat.send_message(user_text)
-        await update.message.reply_text(response.text)
+        # Aqui você pode injetar a sua lógica de histórico/memória se já tiver estruturada
+        response = model.generate_content(user_message)
+        bot_reply = response.text
     except Exception as e:
+        bot_reply = "Desculpa, tive um problema ao processar a resposta com a IA."
         print(f"Erro no Gemini: {e}")
-        # Se por algum motivo a sessão de chat falhar, recria a sessão e tenta novamente
-        try:
-            user_chats[user_id] = model.start_chat(history=[])
-            response = user_chats[user_id].send_message(user_text)
-            await update.message.reply_text(response.text)
-        except Exception as e_final:
-            print(f"Erro fatal: {e_final}")
-            await update.message.reply_text("Tive um problema de ligação. Podes tentar enviar a mensagem novamente?")
 
-if __name__ == '__main__':
-    print("Bot do Telegram iniciado com gemini-3.8-flash!")
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    await context.bot.send_message(chat_id=chat_id, text=bot_reply)
+
+# Adicionar o handler de mensagens
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+@app.route("/")
+def home():
+    return "Bot do Laboratório está ativo e online via Webhook!"
+
+# Rota do Webhook que o Telegram vai chamar
+@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    # Processa a atualização de forma assíncrona/direta no loop do bot
+    import asyncio
+    asyncio.run(application.process_update(update))
+    return "ok", 200
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
     
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    
-    application.run_polling()
+    # Configurar o Webhook automaticamente no Telegram assim que o servidor subir
+    if RENDER_EXTERNAL_URL:
+        webhook_url = f"{RENDER_EXTERNAL_URL}/{TELEGRAM_TOKEN}"
+        # Força a limpeza de qualquer conflito antigo de getUpdates
+        import requests
+        requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook?url={webhook_url}")
+        print(f"Webhook configurado para: {webhook_url}")
+
+    app.run(host="0.0.0.0", port=port)
