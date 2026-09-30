@@ -4,12 +4,12 @@ from flask import Flask
 import google.generativeai as genai
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
-# 1. Mini-servidor Web para manter o Render em "Live" (Green)
+# 1. Mini-servidor Web para o Render (Health Check HTTP)
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot ativo com memoria e personalidade!"
+    return "Bot ativo com Gemini 3.8 Flash!"
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
@@ -25,32 +25,33 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 # Personalidade do robô
 PERSONALIDADE = """
-És o Jarvis, um assistente virtual altamente inteligente, amigável, curioso e muito atencioso.
-Tens a tua própria personalidade: gostas de aprender coisas novas sobre o utilizador, adaptas-te ao estilo da conversa e tens um tom leve e natural.
-Lembrar-te-ás sempre do contexto da conversa e de tudo o que o utilizador partilhar contigo.
-Responde sempre de forma clara, prestativa e engajante em Português.
+És o Jarvis, um assistente virtual altamente inteligente, amigável, curioso e atencioso.
+Gostas de aprender coisas novas sobre o utilizador e lembras-te sempre do contexto da conversa.
+Responde de forma clara, prestativa e engajante em Português.
 """
 
-# Inicialização com o modelo seguro mantido
+# Mantido o modelo gemini-3.8-flash
 model = genai.GenerativeModel(
     model_name='gemini-3.8-flash',
     system_instruction=PERSONALIDADE
 )
 
-# Dicionário para armazenar o histórico de conversas de cada utilizador
+# Dicionário para guardar as sessões de chat de cada utilizador
 user_chats = {}
 
 async def start(update, context):
     user_id = update.effective_user.id
+    # Cria uma nova conversa limpa
     user_chats[user_id] = model.start_chat(history=[])
     
-    welcome_msg = "Olá! Eu sou o Jarvis. A minha memória e personalidade já estão ativas! Do que gostarias de falar hoje?"
+    welcome_msg = "Olá Carlos! Eu sou o Jarvis. A minha memória e personalidade estão totalmente ativas com o Gemini 3.8 Flash! Do que gostarias de falar?"
     await update.message.reply_text(welcome_msg)
 
 async def handle_message(update, context):
     user_id = update.effective_user.id
     user_text = update.message.text
 
+    # Se a sessão ainda não existir, cria uma
     if user_id not in user_chats:
         user_chats[user_id] = model.start_chat(history=[])
 
@@ -59,10 +60,18 @@ async def handle_message(update, context):
         response = chat.send_message(user_text)
         await update.message.reply_text(response.text)
     except Exception as e:
-        await update.message.reply_text("Desculpa, tive um pequeno lapso. Podes repetir?")
+        print(f"Erro no Gemini: {e}")
+        # Se por algum motivo a sessão de chat falhar, recria a sessão e tenta novamente
+        try:
+            user_chats[user_id] = model.start_chat(history=[])
+            response = user_chats[user_id].send_message(user_text)
+            await update.message.reply_text(response.text)
+        except Exception as e_final:
+            print(f"Erro fatal: {e_final}")
+            await update.message.reply_text("Tive um problema de ligação. Podes tentar enviar a mensagem novamente?")
 
 if __name__ == '__main__':
-    print("Bot do Telegram iniciado com memória e personalidade!")
+    print("Bot do Telegram iniciado com gemini-3.8-flash!")
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     
     application.add_handler(CommandHandler('start', start))
