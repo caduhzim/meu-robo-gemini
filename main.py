@@ -24,13 +24,11 @@ def send_telegram_message(chat_id, text):
 def webhook():
     data = flask_request.get_json(force=True)
     
-    # Verifica se é uma mensagem de texto válida do Telegram
     if "message" in data and "text" in data["message"]:
         chat_id = data["message"]["chat"]["id"]
         user_message = data["message"]["text"]
         
         try:
-            # Chamada para a API da Groq (Llama 3.3 70B)
             chat_completion = client.chat.completions.create(
                 messages=[
                     {
@@ -38,7 +36,7 @@ def webhook():
                         "content": user_message,
                     }
                 ],
-                model="model="llama3-70b-819",
+                model="llama3-70b-8192",
             )
             reply_text = chat_completion.choices[0].message.content
             send_telegram_message(chat_id, reply_text)
