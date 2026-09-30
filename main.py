@@ -9,7 +9,7 @@ GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
 genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel("gemini-2.5-flash")
+model = genai.GenerativeModel("gemini-3.8-flash")
 
 # Resposta ao comando /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
