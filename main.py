@@ -3,7 +3,7 @@ import asyncio
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters
-import google.generativeai as genai
+from google import genai
 
 app = Flask(__name__)
 
@@ -11,9 +11,8 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
-genai.configure(api_key=GEMINI_API_KEY)
-# Modelo atualizado e correto
-model = genai.GenerativeModel('gemini-2.5-flash')
+# Configuração correta com o novo client do Google GenAI
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 application = Application.builder().token(TELEGRAM_TOKEN).updater(None).build()
 
@@ -22,8 +21,12 @@ async def handle_message(update: Update, context):
     chat_id = update.message.chat_id
     
     try:
-        response = model.generate_content(user_message)
-        bot_reply = response.text
+        # Usando a Interactions API recomendada com o modelo atual
+        response = client.interactions.create(
+            model="gemini-3.8-flash",
+            input=user_message
+        )
+        bot_reply = response.output_text
     except Exception as e:
         import traceback
         traceback.print_exc()
