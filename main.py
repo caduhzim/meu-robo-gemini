@@ -38,7 +38,7 @@ def webhook():
                         "content": user_message,
                     }
                 ],
-                model="llama-3.3-70b-versatile",
+                model="model="llama3-70b-819",
             )
             reply_text = chat_completion.choices[0].message.content
             send_telegram_message(chat_id, reply_text)
