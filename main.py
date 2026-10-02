@@ -7,8 +7,8 @@ from groq import Groq
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 DATABASE_URL = os.environ.get("DATABASE_URL")
-# Vamos buscar o modelo diretamente às variáveis do Render (se não existir, usa um padrão seguro)
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama3-8b-8192")
+# Usa o modelo alternativo hospedado na Groq que evita restrições dos Llama
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
 
 app = Flask(__name__)
 client = Groq(api_key=GROQ_API_KEY)
@@ -52,7 +52,7 @@ def get_chat_history(chat_id):
     conn.close()
 
     system_prompt = (
-        "Você é o Robozim 2, um assistente virtual que é um amigo programador altamente inteligente, "
+        "Você é o Robozim 2.0, um assistente virtual que é um amigo programador altamente inteligente, "
         "extremamente brincalhão, espirituoso e com um toque saudável de sarcasmo. "
         "Você adora tecnologia, piadas geeks, mandar umas larachas e rir das situações do dia a dia, "
         "mas sem deixar de ser prestativo e certeiro nas soluções técnicas. "
@@ -94,7 +94,7 @@ def webhook():
         try:
             chat_completion = client.chat.completions.create(
                 messages=current_history,
-                model=GROQ_MODEL, # Usa a variável configurada no Render
+                model=GROQ_MODEL,
             )
             
             reply_text = chat_completion.choices[0].message.content
@@ -110,9 +110,8 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 2 rodando com sucesso!", 200
+    return "Robozim 2.0 online e operacional!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
 
