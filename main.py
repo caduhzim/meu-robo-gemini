@@ -3,34 +3,15 @@ import psycopg2
 import requests
 from flask import Flask, request as flask_request
 from groq import Groq
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from duckduckgo_search import DDGS
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 app = Flask(__name__)
 
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    safety_settings = {
-        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-    }
-    gemini_model = genai.GenerativeModel(
-        model_name='gemini-1.5-flash',
-        safety_settings=safety_settings
-    )
-else:
-    gemini_model = None
-
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
 def get_db_connection():
@@ -93,7 +74,7 @@ def get_chat_history(chat_id):
         "Você é o Robozim 3.0, um assistente virtual que é um amigo programador altamente inteligente, "
         "extremamente brincalhão, espirituoso e com um toque saudável de sarcasmo. "
         "QUANDO HOUVER DADOS DE PESQUISA WEB NO CONTEXTO, VOCÊ DEVE OBRIGATORIAMENTE USÁ-LOS PARA RESPONDER EXATAMENTE AO UTILIZADOR, "
-        "sem nunca dizer que não tem acesso a dados em tempo real. "
+        "sem nunca recusar ou dizer que não tem acesso à internet. "
         "Sempre que enviar blocos de código ou comandos, certifique-se de usar a formatação correta em Markdown "
         "(com crases triplas ```) para ficarem legíveis e fáceis de copiar no Telegram."
     )
@@ -126,7 +107,7 @@ def enviar_mensagem_telegram(chat_id, text):
         }
         requests.post(TELEGRAM_API_URL, json=payload_fallback)
 
-def escolher_ia_e_responder(current_history, user_message):
+def processar_com_groq(current_history, user_message):
     palavras_pesquisa = [
         "pesquise", "pesquisa", "pesquisar", "busca", "busque", "procura", "procure", 
         "encontre", "achar", "me mostra", "mostre", "trazer", "traga", "consulte", 
@@ -134,7 +115,7 @@ def escolher_ia_e_responder(current_history, user_message):
         "notícia", "notícias", "últimas", "recente", "recentes", "hoje", "ontem", "amanhã", 
         "agora", "atual", "atualizado", "última hora", "lançamento", "lançou", "saiu", 
         "novidade", "novidades", "estado atual", "agenda", "calendário", "data", "quando",
-        "quem é", "quem foi", "quem são", "o que é", "o que foi", "o que são", 
+        "quem é", "quem foi", "quem são", "o que é", "o what foi", "o que são", 
         "qual é", "quais são", "onde fica", "onde é", "onde encontrar", "quando foi", 
         "quando aconteceu", "quanto foi", "quantos são", "como funciona", "como fazer", 
         "por que", "porque", "qual a história", "significado", "definição",
@@ -152,63 +133,27 @@ def escolher_ia_e_responder(current_history, user_message):
     ]
     
     precisa_pesquisar = any(p in user_message.lower() for p in palavras_pesquisa)
+    historico_temp = list(current_history)
     
-    contexto_web = ""
     if precisa_pesquisar:
         print(f"A pesquisar na web por: {user_message}")
         dados_web = pesquisar_duckduckgo(user_message)
         if dados_web:
-            contexto_web = f"\n\n[RESULTADOS REAIS DA WEB ACABADOS DE PESQUISAR]:\n{dados_web}\n"
+            contexto_web = f"\n\n[DADOS REAIS OBTIDOS NA WEB PARA RESPONDER AO UTILIZADOR]:\n{dados_web}\nUsa obrigatoriamente estes dados para responder de forma direta e natural."
+            historico_temp.append({"role": "system", "content": contexto_web})
 
-    # Se precisa de pesquisa, tentamos o Gemini obrigatoriamente
-    if precisa_pesquisar and gemini_model:
-        try:
-            prompt_gemini = f"Instrução do Sistema: {current_history[0]['content']}{contexto_web}\n\n"
-            for msg in current_history[1:]:
-                role_label = "Utilizador" if msg['role'] == "user" else "Assistente"
-                prompt_gemini += f"{role_label}: {msg['content']}\n"
-            prompt_gemini += f"Utilizador: {user_message}\nAssistente:"
-            
-            response = gemini_model.generate_content(prompt_gemini)
-            if response and response.text:
-                return response.text, "Gemini (Com Web Search)"
-        except Exception as e:
-            print(f"Gemini falhou na pesquisa: {e}")
-            if contexto_web:
-                # Se o Gemini falhou mas temos os dados da web, devolvemos diretamente os dados limpos ao utilizador!
-                return f"Epa, o meu cérebro principal engasgou-se, mas fui ali à web e achei isto para ti:\n\n{dados_web}", "DuckDuckGo Direto"
-
-    # Conversa normal sem pesquisa -> Gemini primeiro, Groq só para chat normal se Gemini falhar
-    if not precisa_pesquisar and gemini_model:
-        try:
-            prompt_gemini = f"Instrução do Sistema: {current_history[0]['content']}\n\n"
-            for msg in current_history[1:]:
-                role_label = "Utilizador" if msg['role'] == "user" else "Assistente"
-                prompt_gemini += f"{role_label}: {msg['content']}\n"
-            prompt_gemini += f"Utilizador: {user_message}\nAssistente:"
-            
-            response = gemini_model.generate_content(prompt_gemini)
-            if response and response.text:
-                return response.text, "Gemini"
-        except Exception as e:
-            print(f"Gemini falhou no chat normal: {e}")
-
-    # Fallback para a Groq APENAS para conversas normais (evita o bug do prompt de pesquisa)
-    if groq_client and not precisa_pesquisar:
+    if groq_client:
         try:
             chat_completion = groq_client.chat.completions.create(
-                messages=current_history,
-                model="openai/gpt-oss-20b",
+                messages=historico_temp,
+                model="mixtral-8x7b-32768",
             )
-            return chat_completion.choices[0].message.content, "Groq Fallback"
-        except Exception as e_groq:
-            print(f"Erro na Groq: {e_groq}")
-            raise e_groq
+            return chat_completion.choices[0].message.content
+        except Exception as e:
+            print(f"Erro na Groq com Mixtral: {e}")
+            return f"Epa mestre, a Groq engasgou-se: {str(e)}"
     
-    if precisa_pesquisar and contexto_web:
-        return f"Mestre, as IAs estão tímidas hoje, mas os dados da web são:\n\n{dados_web}", "DuckDuckGo Direto"
-    
-    return "Epa, fiquei sem IAs disponíveis!", "Nenhuma"
+    return "Epa, o cliente da Groq não está configurado!"
 
 @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
 def webhook():
@@ -219,7 +164,7 @@ def webhook():
         try:
             save_message(chat_id, "user", user_message)
             current_history = get_chat_history(chat_id)
-            reply_text, ia_usada = escolher_ia_e_responder(current_history, user_message)
+            reply_text = processar_com_groq(current_history, user_message)
             save_message(chat_id, "assistant", reply_text)
             enviar_mensagem_telegram(chat_id, reply_text)
         except Exception as e:
@@ -230,7 +175,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 3.0 com Pesquisa Isolada online!", 200
+    return "Robozim 3.0 com Mixtral e DuckDuckGo online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
