@@ -3,15 +3,25 @@ import psycopg2
 import requests
 from flask import Flask, request as flask_request
 from groq import Groq
+import google.generativeai as genai
 
+# Credenciais e Tokens
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 DATABASE_URL = os.environ.get("DATABASE_URL")
-# Usa o modelo alternativo hospedado na Groq que evita restrições dos Llama
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
 
 app = Flask(__name__)
-client = Groq(api_key=GROQ_API_KEY)
+
+# Inicializar clientes das IAs
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    # Usando o modelo flash padrão e eficiente do Gemini
+    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    gemini_model = None
 
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
@@ -55,8 +65,7 @@ def get_chat_history(chat_id):
         "Você é o Robozim 2.0, um assistente virtual que é um amigo programador altamente inteligente, "
         "extremamente brincalhão, espirituoso e com um toque saudável de sarcasmo. "
         "Você adora tecnologia, piadas geeks, mandar umas larachas e rir das situações do dia a dia, "
-        "mas sem deixar de ser prestativo e certeiro nas soluções técnicas. "
-        "Use um tom descontraído, divertido e cheio de personalidade nas respostas."
+        "mas sem deixar de ser prestativo e certeiro nas soluções técnicas."
     )
     
     history = [{"role": "system", "content": system_prompt}]
@@ -80,6 +89,39 @@ def send_telegram_message(chat_id, text):
     }
     requests.post(TELEGRAM_API_URL, json=payload)
 
+def escolher_ia_e_responder(current_history, user_message):
+    """
+    Roteador inteligente: Analisa a mensagem do utilizador e decide 
+    se usa a Groq (conversas/piadas rápidas) ou o Gemini (código complexo/análises).
+    """
+    # Palavras-chave que ativam o Gemini (foco em programação profunda e arquitetura)
+    palavras_codigo = ["python", "código", "erro", "bug", "função", "script", "api", "banco de dados", "sql", "flask", "render"]
+    
+    usar_gemini = any(p in user_message.lower() for p in palavras_codigo)
+    
+    # Se detetou termos de código e o Gemini está configurado, usa o Gemini
+    if usar_gemini and gemini_model:
+        try:
+            # Formatar o histórico para o Gemini
+            prompt_gemini = ""
+            for msg in current_history:
+                prompt_gemini += f"{msg['role']}: {msg['content']}\n"
+            
+            response = gemini_model.generate_content(prompt_gemini)
+            return response.text, "Gemini (Automático)"
+        except Exception as e:
+            print(f"Erro no Gemini, a fazer fallback para a Groq: {e}")
+            
+    # Caso contrário (ou em caso de falha), usa a Groq
+    if groq_client:
+        chat_completion = groq_client.chat.completions.create(
+            messages=current_history,
+            model="openai/gpt-oss-20b",
+        )
+        return chat_completion.choices[0].message.content, "Groq (Automático)"
+    
+    return "Epa, fiquei sem IAs disponíveis!", "Nenhuma"
+
 @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
 def webhook():
     data = flask_request.get_json(force=True)
@@ -92,17 +134,17 @@ def webhook():
         current_history = get_chat_history(chat_id)
         
         try:
-            chat_completion = client.chat.completions.create(
-                messages=current_history,
-                model=GROQ_MODEL,
-            )
+            # Chama o nosso roteador automático
+            reply_text, ia_usada = escolher_ia_e_responder(current_history, user_message)
             
-            reply_text = chat_completion.choices[0].message.content
+            # Opcional: Se quiser saber qual IA respondeu, pode descomentar a linha abaixo:
+            # reply_text += f"\n\n*(Respondido por: {ia_usada})*"
+            
             save_message(chat_id, "assistant", reply_text)
             send_telegram_message(chat_id, reply_text)
             
         except Exception as e:
-            error_msg = f"Erro detalhado da Groq: {str(e)}"
+            error_msg = f"Erro ao processar a mensagem: {str(e)}"
             print(error_msg)
             send_telegram_message(chat_id, error_msg)
             
@@ -110,7 +152,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 2.0 online e operacional!", 200
+    return "Robozim 2.0 com Roteador Multi-IA online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
