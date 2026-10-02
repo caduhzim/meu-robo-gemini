@@ -5,6 +5,7 @@ from flask import Flask, request as flask_request
 from groq import Groq
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
+from duckduckgo_search import DDGS
 
 # Credenciais e Tokens
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -50,6 +51,25 @@ def init_db():
     conn.close()
 
 init_db()
+
+# --- Função de Pesquisa DuckDuckGo Corrigida ---
+def pesquisar_duckduckgo(termo):
+    try:
+        with DDGS() as ddgs:
+            resultados = [r for r in ddgs.text(termo, max_results=3)]
+            texto_final = ""
+            if resultados:
+                for r in resultados:
+                    titulo = r.get('title', 'Sem título')
+                    corpo = r.get('body', 'Sem descrição')
+                    link = r.get('href', '#')
+                    texto_final += f"- {titulo}: {corpo} ({link})\n"
+                return texto_final
+            else:
+                return ""
+    except Exception as e:
+        print(f"Erro na pesquisa DuckDuckGo: {e}")
+        return ""
 
 def get_chat_history(chat_id):
     conn = get_db_connection()
@@ -97,76 +117,3 @@ def enviar_mensagem_telegram(chat_id, text):
         "parse_mode": "Markdown"
     }
     
-    response = requests.post(TELEGRAM_API_URL, json=payload)
-    
-    if response.status_code != 200:
-        payload_fallback = {
-            "chat_id": chat_id,
-            "text": text
-        }
-        requests.post(TELEGRAM_API_URL, json=payload_fallback)
-
-def escolher_ia_e_responder(current_history, user_message):
-    palavras_codigo = ["python", "código", "erro", "bug", "função", "script", "api", "banco de dados", "sql", "flask", "render", "nome"]
-    
-    usar_gemini = any(p in user_message.lower() for p in palavras_codigo)
-    
-    if usar_gemini and gemini_model:
-        try:
-            prompt_gemini = f"Instrução do Sistema: {current_history[0]['content']}\n\n"
-            for msg in current_history[1:]:
-                role_label = "Utilizador" if msg['role'] == "user" else "Assistente"
-                prompt_gemini += f"{role_label}: {msg['content']}\n"
-            prompt_gemini += f"Utilizador: {user_message}\nAssistente:"
-            
-            response = gemini_model.generate_content(prompt_gemini)
-            return response.text, "Gemini (Automático)"
-        except Exception as e:
-            print(f"Erro no Gemini, a fazer fallback para a Groq: {e}")
-            
-    if groq_client:
-        try:
-            chat_completion = groq_client.chat.completions.create(
-                messages=current_history,
-                model="llama-3.3-70b-versatile",
-            )
-            return chat_completion.choices[0].message.content, "Groq (Llama 3.3 Versatile)"
-        except Exception as e_groq:
-            print(f"Erro no Llama 3.3, a tentar o fallback para Llama 3.1 8B Instant: {e_groq}")
-            # Fallback interno de segurança caso o 3.3 falhe
-            chat_completion_fallback = groq_client.chat.completions.create(
-                messages=current_history,
-                model="llama-3.1-8b-instant",
-            )
-            return chat_completion_fallback.choices[0].message.content, "Groq (Llama 3.1 Instant Fallback)"
-    
-    return "Epa, fiquei sem IAs disponíveis!", "Nenhuma"
-
-@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
-def webhook():
-    data = flask_request.get_json(force=True)
-    
-    if "message" in data and "text" in data["message"]:
-        chat_id = data["message"]["chat"]["id"]
-        user_message = data["message"]["text"]
-        
-        try:
-            save_message(chat_id, "user", user_message)
-            current_history = get_chat_history(chat_id)
-            reply_text, ia_usada = escolher_ia_e_responder(current_history, user_message)
-            save_message(chat_id, "assistant", reply_text)
-            enviar_mensagem_telegram(chat_id, reply_text)
-            
-        except Exception as e:
-            error_msg = f"Erro ao processar a mensagem: {str(e)}"
-            print(error_msg)
-            enviar_mensagem_telegram(chat_id, error_msg)
-            
-    return "ok", 200
-
-@app.route("/", methods=["GET"])
-def index():
-    return "Robozim 3.0 com Groq Llama Versatile online!", 200
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

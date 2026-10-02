@@ -1,6 +1,7 @@
-Flask
-psycopg2-binary
-requests
+duckduckgo_search==5.3.1
+flask
 groq
 google-generativeai
-duckduckgo_search==5.3.1
+psycopg2-binary
+requests
+
