@@ -25,7 +25,15 @@ if GEMINI_API_KEY:
         HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
         HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
     }
-    gemini_model = genai.GenerativeModel('gemini-1.5-flash', safety_settings=safety_settings)
+    generation_config = {
+        "temperature": 0.7,
+        "max_output_tokens": 2048,
+    }
+    gemini_model = genai.GenerativeModel(
+        'gemini-1.5-flash', 
+        safety_settings=safety_settings,
+        generation_config=generation_config
+    )
 else:
     gemini_model = None
 
@@ -72,8 +80,7 @@ def get_chat_history(chat_id):
         "O nome do seu utilizador/amigo é Carlos Eduardo (mas pode tratá-lo por Carlos ou Eduardo). "
         "Você é o Robozim 2.0, um assistente virtual que é um amigo programador altamente inteligente, "
         "extremamente brincalhão, espirituoso e com um toque saudável de sarcasmo. "
-        "Sempre que enviar blocos de código ou comandos, certifique-se de usar a formatação correta em Markdown "
-        "(com crases triplas ```) para ficarem legíveis e fáceis de copiar no Telegram."
+        "Quando crias projetos ou aplicações, sê detalhado, dá ideias de estrutura e usa blocos de código claros."
     )
     
     history = [{"role": "system", "content": system_prompt}]
@@ -92,33 +99,30 @@ def save_message(chat_id, role, content):
 
 def enviar_mensagem_telegram(chat_id, text):
     """
-    Envia a mensagem para o Telegram aplicando formatação segura em MarkdownV2 ou Markdown standard,
-    evitando que falhas de sintaxe na resposta da IA bloqueiem o envio.
+    Função atualizada: Envia a mensagem de forma limpa e direta para o Telegram,
+    garantindo que respostas longas ou com blocos de código cheguem sem bloqueios de formatação.
     """
     payload = {
         "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "Markdown"
+        "text": text
     }
-    
-    response = requests.post(TELEGRAM_API_URL, json=payload)
-    
-    # Se o Telegram rejeitar por causa de algum caractere mal formatado em Markdown, 
-    # faz um fallback e envia como texto normal para nunca perder a resposta.
-    if response.status_code != 200:
-        payload_fallback = {
-            "chat_id": chat_id,
-            "text": text
-        }
-        requests.post(TELEGRAM_API_URL, json=payload_fallback)
+    try:
+        requests.post(TELEGRAM_API_URL, json=payload, timeout=20)
+    except Exception as e:
+        print(f"Erro ao enviar para o Telegram: {e}")
 
 def escolher_ia_e_responder(current_history, user_message):
-    palavras_codigo = ["python", "código", "erro", "bug", "função", "script", "api", "banco de dados", "sql", "flask", "render", "nome"]
+    palavras_codigo = [
+        "python", "código", "erro", "bug", "função", "script", "api", 
+        "banco de dados", "sql", "flask", "render", "nome", "app", 
+        "aplicação", "sistema", "criar", "programa", "site", "oficina"
+    ]
     
     usar_gemini = any(p in user_message.lower() for p in palavras_codigo)
     
     if usar_gemini and gemini_model:
         try:
+            print("A usar o Gemini (com tempo de espera alargado)...")
             prompt_gemini = f"Instrução do Sistema: {current_history[0]['content']}\n\n"
             for msg in current_history[1:]:
                 role_label = "Utilizador" if msg['role'] == "user" else "Assistente"
@@ -126,18 +130,24 @@ def escolher_ia_e_responder(current_history, user_message):
             prompt_gemini += f"Utilizador: {user_message}\nAssistente:"
             
             response = gemini_model.generate_content(prompt_gemini)
-            return response.text, "Gemini (Automático)"
+            if response and response.text:
+                return response.text, "Gemini"
         except Exception as e:
-            print(f"Erro no Gemini, a fazer fallback para a Groq: {e}")
+            print(f"Erro crítico no Gemini: {e}. A fazer fallback para a Groq...")
             
     if groq_client:
-        chat_completion = groq_client.chat.completions.create(
-            messages=current_history,
-            model="openai/gpt-oss-20b",
-        )
-        return chat_completion.choices[0].message.content, "Groq (Automático)"
-    
-    return "Epa, fiquei sem IAs disponíveis!", "Nenhuma"
+        try:
+            print("A usar a Groq...")
+            chat_completion = groq_client.chat.completions.create(
+                messages=current_history,
+                model="openai/gpt-oss-20b",
+                timeout=30.0 
+            )
+            return chat_completion.choices[0].message.content, "Groq"
+        except Exception as e:
+            print(f"Erro na Groq: {e}")
+            
+    return "Epa, rebentou tudo por aqui e fiquei sem IAs disponíveis! Tenta de novo.", "Nenhuma"
 
 @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
 def webhook():
@@ -154,25 +164,25 @@ def webhook():
             # 2. Busca o histórico atualizado
             current_history = get_chat_history(chat_id)
             
-            # 3. Gera a resposta com a IA ideal
+            # 3. Gera a resposta com tempo alargado para a IA pensar
             reply_text, ia_usada = escolher_ia_e_responder(current_history, user_message)
             
             # 4. Guarda a resposta do assistente na Supabase
             save_message(chat_id, "assistant", reply_text)
             
-            # 5. Envia formatado para o Telegram
+            # 5. Envia para o Telegram com segurança
             enviar_mensagem_telegram(chat_id, reply_text)
             
         except Exception as e:
-            error_msg = f"Erro ao processar a mensagem: {str(e)}"
+            error_msg = f"Erro ao processar o webhook: {str(e)}"
             print(error_msg)
-            enviar_mensagem_telegram(chat_id, error_msg)
+            enviar_mensagem_telegram(chat_id, "Epa, demorei um bocado a pensar e o servidor deu um soluço. Podes repetir a pergunta?")
             
     return "ok", 200
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 2.0 com Roteador e Formatação Inteligente online!", 200
+    return "Robozim 2.0 otimizado e seguro online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
