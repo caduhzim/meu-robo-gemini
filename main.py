@@ -43,8 +43,7 @@ def pesquisar_duckduckgo(termo):
                 for r in resultados:
                     titulo = r.get('title', 'Sem título')
                     corpo = r.get('body', 'Sem descrição')
-                    link = r.get('href', '#')
-                    texto_final += f"- *{titulo}*: {corpo}\n  🔗 [Link]({link})\n\n"
+                    texto_final += f"- {titulo}: {corpo}\n"
                 return texto_final
             else:
                 return ""
@@ -69,13 +68,12 @@ def get_chat_history(chat_id):
     conn.close()
 
     system_prompt = (
-        "IMPORTANTE: Você DEVE responder sempre em Português fluido. "
+        "IMPORTANTE: Você DEVE responder sempre em Português fluido, de forma clara, direta e organizada. "
         "O nome do seu utilizador/amigo é Eduardo. "
-        "Você é o Robozim 3.0, um assistente virtual que é um amigo programador altamente inteligente, "
-        "extremamente brincalhão, espirituoso e com um toque saudável de sarcasmo. "
-        "QUANDO HOUVER DADOS DE PESQUISA WEB NO CONTEXTO, VOCÊ DEVE OBRIGATORIAMENTE USÁ-LOS PARA RESPONDER EXATAMENTE AO UTILIZADOR. "
-        "Sempre que enviar blocos de código ou comandos, certifique-se de usar a formatação correta em Markdown "
-        "(com crases triplas ```) para ficarem legíveis e fáceis de copiar no Telegram."
+        "Você é o Robozim 3.0, um amigo programador altamente inteligente, brincalhão e com um toque saudável de sarcasmo. "
+        "REGRA DE OURO PARA PESQUISAS: Se houver dados de pesquisa web no contexto, resuma-os com clareza em suas próprias palavras, "
+        "em vez de colar blocos confusos ou textos crus. Nunca recuse responder. "
+        "Sempre que enviar blocos de código ou comandos, use a formatação correta em Markdown (com crases triplas ```)."
     )
     
     history = [{"role": "system", "content": system_prompt}]
@@ -138,7 +136,7 @@ def processar_com_groq(current_history, user_message):
         print(f"A pesquisar na web por: {user_message}")
         dados_web = pesquisar_duckduckgo(user_message)
         if dados_web:
-            contexto_web = f"\n\n[DADOS REAIS OBTIDOS NA WEB PARA RESPONDER AO UTILIZADOR]:\n{dados_web}\nUsa obrigatoriamente estes dados para responder de forma direta e natural."
+            contexto_web = f"\n\n[DADOS DA WEB]:\n{dados_web}\nInstrução: Sintetize estes dados numa resposta natural e fluida para o Eduardo, sem copiar o texto bruto de forma desorganizada."
             historico_temp.append({"role": "system", "content": contexto_web})
 
     if groq_client:
@@ -174,7 +172,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 3.0 com GPT-OSS-20B e DuckDuckGo online!", 200
+    return "Robozim 3.0 limpo e organizado online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
