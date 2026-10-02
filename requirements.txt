@@ -3,4 +3,4 @@ psycopg2-binary
 requests
 groq
 google-generativeai
-
+duckduckgo_search==5.3.1
