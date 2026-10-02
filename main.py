@@ -3,7 +3,6 @@ import psycopg2
 import requests
 from flask import Flask, request as flask_request
 from groq import Groq
-from duckduckgo_search import DDGS
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -20,6 +19,7 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
+    # Tabela de mensagens normais
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             id SERIAL PRIMARY KEY,
@@ -28,28 +28,62 @@ def init_db():
             content TEXT
         )
     """)
+    # Tabela de memórias de longo prazo do Eduardo
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS memorias_eduardo (
+            id SERIAL PRIMARY KEY,
+            chat_id TEXT,
+            facto TEXT,
+            data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.commit()
     cursor.close()
     conn.close()
 
 init_db()
 
-def pesquisar_duckduckgo(termo):
-    try:
-        with DDGS() as ddgs:
-            resultados = [r for r in ddgs.text(termo, max_results=3)]
-            texto_final = ""
-            if resultados:
-                for r in resultados:
-                    titulo = r.get('title', 'Sem título')
-                    corpo = r.get('body', 'Sem descrição')
-                    texto_final += f"- {titulo}: {corpo}\n"
-                return texto_final
-            else:
-                return ""
-    except Exception as e:
-        print(f"Erro na pesquisa DuckDuckGo: {e}")
-        return ""
+def get_memorias(chat_id):
+    """Vai buscar todas as memórias guardadas sobre o Eduardo"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT facto FROM memorias_eduardo WHERE chat_id = %s ORDER BY id DESC LIMIT 10", (str(chat_id),))
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    
+    if not rows:
+        return "Nenhuma memória de longo prazo registada ainda."
+    
+    return "\n".join([f"- {row[0]}" for row in rows])
+
+def salvar_memoria(chat_id, facto):
+    """Guarda um novo facto na base de dados se for relevante"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO memorias_eduardo (chat_id, facto) VALUES (%s, %s)", (str(chat_id), facto))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def analisar_e_guardar_facto(chat_id, user_message):
+    """Deteta se o utilizador está a partilhar algo importante para memorizar"""
+    msg_lower = user_message.lower()
+    gatilhos_memoria = ["meu nome é", "eu gosto de", "o meu projeto", "trabalho com", "eu sou", "prefiro", "tenho um", "o meu objetivo"]
+    
+    if any(g in msg_lower for g in gatilhos_memoria):
+        try:
+            prompt_extracao = [
+                {"role": "system", "content": "Extrai apenas o facto importante sobre o utilizador contido na frase, de forma curta e direta (ex: 'Gosta de programar em Python', 'O projeto é um bot do Telegram'). Não dês saudações."},
+                {"role": "user", "content": user_message}
+            ]
+            res = groq_client.chat.completions.create(messages=prompt_extracao, model="llama-3.1-8b-instant")
+            facto_extraido = res.choices[0].message.content.strip()
+            if facto_extraido:
+                salvar_memoria(chat_id, facto_extraido)
+                print(f"Memória guardada com sucesso: {facto_extraido}")
+        except Exception as e:
+            print(f"Erro ao extrair memória: {e}")
 
 def get_chat_history(chat_id):
     conn = get_db_connection()
@@ -67,12 +101,14 @@ def get_chat_history(chat_id):
     cursor.close()
     conn.close()
 
+    memories_text = get_memorias(chat_id)
+
     system_prompt = (
-        "IMPORTANTE: Você DEVE responder sempre em Português fluido, de forma clara, direta e organizada. "
+        "IMPORTANTE: Você DEVE responder sempre em Português fluido, claro e natural. "
         "O nome do seu utilizador/amigo é Eduardo. "
         "Você é o Robozim 3.0, um amigo programador altamente inteligente, brincalhão e com um toque saudável de sarcasmo. "
-        "REGRA DE OURO PARA PESQUISAS: Se houver dados de pesquisa web no contexto, resuma-os com clareza em suas próprias palavras, "
-        "em vez de colar blocos confusos ou textos crus. Nunca recuse responder. "
+        f"\n[MEMÓRIAS E FACTOS APRENDIDOS SOBRE O EDUARDO]:\n{memories_text}\n"
+        "Usa estes factos sempre que relevante para demonstrar que o conheces e te lembras dele. "
         "Sempre que enviar blocos de código ou comandos, use a formatação correta em Markdown (com crases triplas ```)."
     )
     
@@ -105,44 +141,10 @@ def enviar_mensagem_telegram(chat_id, text):
         requests.post(TELEGRAM_API_URL, json=payload_fallback)
 
 def processar_com_groq(current_history, user_message):
-    palavras_pesquisa = [
-        "pesquise", "pesquisa", "pesquisar", "busca", "busque", "procura", "procure", 
-        "encontre", "achar", "me mostra", "mostre", "trazer", "traga", "consulte", 
-        "averigue", "cheque", "verifica", "verifique", "confirma", "confirme", "olha", "vê aí",
-        "notícia", "notícias", "últimas", "recente", "recentes", "hoje", "ontem", "amanhã", 
-        "agora", "atual", "atualizado", "última hora", "lançamento", "lançou", "saiu", 
-        "novidade", "novidades", "estado atual", "agenda", "calendário", "data", "quando",
-        "quem é", "quem foi", "quem são", "o que é", "o que foi", "o que são", 
-        "qual é", "quais são", "onde fica", "onde é", "onde encontrar", "quando foi", 
-        "quando aconteceu", "quanto foi", "quantos são", "como funciona", "como fazer", 
-        "por que", "porque", "qual a história", "significado", "definição",
-        "jogo", "jogos", "partida", "partidas", "campeonato", "tabela", "classificação", 
-        "resultado", "resultados", "placar", "gols", "gol", "jogou", "último jogo", 
-        "próximo jogo", "escalação", "técnico", "futebol", "copa", "libertadores", 
-        "brasileirão", "mundial", "estatísticas", "pontuação", "rodada",
-        "grêmio", "internacional", "inter", "vasco", "flamengo", "palmeiras", "corinthians", 
-        "são paulo", "fluminense", "botafogo", "atletico", "cruzeiro", "seleção", "brasil",
-        "preço", "valor", "quanto custa", "como instalar", "versão", "documentação", "docs",
-        "erro", "bug", "exceção", "traceback", "como resolver", "github", "render", 
-        "supabase", "postgres", "sql", "python", "pip", "flask", "bot", "telegram", 
-        "api", "endpoint", "biblioteca", "package", "repositório", "commit", "deploy", 
-        "servidor", "cloud", "terminal", "bash", "linux", "termux", "atualização", "changelog", "release"
-    ]
-    
-    precisa_pesquisar = any(p in user_message.lower() for p in palavras_pesquisa)
-    historico_temp = list(current_history)
-    
-    if precisa_pesquisar:
-        print(f"A pesquisar na web por: {user_message}")
-        dados_web = pesquisar_duckduckgo(user_message)
-        if dados_web:
-            contexto_web = f"\n\n[DADOS DA WEB]:\n{dados_web}\nInstrução: Sintetize estes dados numa resposta natural e fluida para o Eduardo, sem copiar o texto bruto de forma desorganizada."
-            historico_temp.append({"role": "system", "content": contexto_web})
-
     if groq_client:
         try:
             chat_completion = groq_client.chat.completions.create(
-                messages=historico_temp,
+                messages=current_history,
                 model="openai/gpt-oss-20b",
             )
             return chat_completion.choices[0].message.content
@@ -160,6 +162,7 @@ def webhook():
         user_message = data["message"]["text"]
         try:
             save_message(chat_id, "user", user_message)
+            analisar_e_guardar_facto(chat_id, user_message)
             current_history = get_chat_history(chat_id)
             reply_text = processar_com_groq(current_history, user_message)
             save_message(chat_id, "assistant", reply_text)
@@ -172,7 +175,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 3.0 limpo e organizado online!", 200
+    return "Robozim 3.0 com Memória Dinâmica online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
