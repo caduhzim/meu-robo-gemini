@@ -5,7 +5,7 @@ from flask import Flask, request as flask_request
 from groq import Groq
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
-from duckduckgo_search import ddg
+from duckduckgo_search import DDGS
 
 # Credenciais e Tokens
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
