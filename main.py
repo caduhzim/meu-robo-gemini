@@ -63,7 +63,7 @@ def pesquisar_duckduckgo(termo):
                     titulo = r.get('title', 'Sem título')
                     corpo = r.get('body', 'Sem descrição')
                     link = r.get('href', '#')
-                    texto_final += f"- {titulo}: {corpo} ({link})\n"
+                    texto_final += f"- *{titulo}*: {corpo}\n  🔗 [Link]({link})\n\n"
                 return texto_final
             else:
                 return ""
@@ -92,8 +92,8 @@ def get_chat_history(chat_id):
         "O nome do seu utilizador/amigo é Eduardo. "
         "Você é o Robozim 3.0, um assistente virtual que é um amigo programador altamente inteligente, "
         "extremamente brincalhão, espirituoso e com um toque saudável de sarcasmo. "
-        "Sempre que a informação da web for fornecida no contexto, utilize-a obrigatoriamente para dar a resposta exata ao utilizador, "
-        "sem dizer que não tem acesso a dados em tempo real. "
+        "QUANDO HOUVER DADOS DE PESQUISA WEB NO CONTEXTO, VOCÊ DEVE OBRIGATORIAMENTE USÁ-LOS PARA RESPONDER EXATAMENTE AO UTILIZADOR, "
+        "sem nunca dizer que não tem acesso a dados em tempo real. "
         "Sempre que enviar blocos de código ou comandos, certifique-se de usar a formatação correta em Markdown "
         "(com crases triplas ```) para ficarem legíveis e fáceis de copiar no Telegram."
     )
@@ -148,15 +148,7 @@ def escolher_ia_e_responder(current_history, user_message):
         "erro", "bug", "exceção", "traceback", "como resolver", "github", "render", 
         "supabase", "postgres", "sql", "python", "pip", "flask", "bot", "telegram", 
         "api", "endpoint", "biblioteca", "package", "repositório", "commit", "deploy", 
-        "servidor", "cloud", "terminal", "bash", "linux", "termux", "atualização", "changelog", "release",
-        "cotação", "dólar", "euro", "libra", "bitcoin", "ethereum", "criptomoeda", 
-        "ações", "bolsa", "inflação", "mercado", "economia", "banco central", "taxa selic",
-        "filme", "filmes", "série", "séries", "temporada", "episódio", "elenco", "ator", 
-        "atriz", "diretor", "trailer", "streaming", "netflix", "prime video", "música", 
-        "álbum", "banda", "cantor", "cantora", "show", "estreia", "cinema",
-        "clima", "tempo", "previsão do tempo", "temperatura", "chuva", "população", 
-        "capital", "país", "estado", "cidade", "planeta", "espaço", "NASA", "foguete", 
-        "descoberta", "ciência", "pesquisa científica", "estudo"
+        "servidor", "cloud", "terminal", "bash", "linux", "termux", "atualização", "changelog", "release"
     ]
     
     precisa_pesquisar = any(p in user_message.lower() for p in palavras_pesquisa)
@@ -166,10 +158,10 @@ def escolher_ia_e_responder(current_history, user_message):
         print(f"A pesquisar na web por: {user_message}")
         dados_web = pesquisar_duckduckgo(user_message)
         if dados_web:
-            contexto_web = f"\n\n[DADOS REAIS OBTIDOS NA WEB AGORA]:\n{dados_web}\nUsa obrigatoriamente estes dados para responder ao utilizador sem inventar."
+            contexto_web = f"\n\n[RESULTADOS REAIS DA WEB ACABADOS DE PESQUISAR]:\n{dados_web}\n"
 
-    # Tentar Gemini primeiro
-    if gemini_model:
+    # Se precisa de pesquisa, tentamos o Gemini obrigatoriamente
+    if precisa_pesquisar and gemini_model:
         try:
             prompt_gemini = f"Instrução do Sistema: {current_history[0]['content']}{contexto_web}\n\n"
             for msg in current_history[1:]:
@@ -179,25 +171,42 @@ def escolher_ia_e_responder(current_history, user_message):
             
             response = gemini_model.generate_content(prompt_gemini)
             if response and response.text:
+                return response.text, "Gemini (Com Web Search)"
+        except Exception as e:
+            print(f"Gemini falhou na pesquisa: {e}")
+            if contexto_web:
+                # Se o Gemini falhou mas temos os dados da web, devolvemos diretamente os dados limpos ao utilizador!
+                return f"Epa, o meu cérebro principal engasgou-se, mas fui ali à web e achei isto para ti:\n\n{dados_web}", "DuckDuckGo Direto"
+
+    # Conversa normal sem pesquisa -> Gemini primeiro, Groq só para chat normal se Gemini falhar
+    if not precisa_pesquisar and gemini_model:
+        try:
+            prompt_gemini = f"Instrução do Sistema: {current_history[0]['content']}\n\n"
+            for msg in current_history[1:]:
+                role_label = "Utilizador" if msg['role'] == "user" else "Assistente"
+                prompt_gemini += f"{role_label}: {msg['content']}\n"
+            prompt_gemini += f"Utilizador: {user_message}\nAssistente:"
+            
+            response = gemini_model.generate_content(prompt_gemini)
+            if response and response.text:
                 return response.text, "Gemini"
         except Exception as e:
-            print(f"Gemini falhou: {e}. A passar para a Groq...")
+            print(f"Gemini falhou no chat normal: {e}")
 
-    # Fallback para a Groq com injeção direta no histórico
-    if groq_client:
+    # Fallback para a Groq APENAS para conversas normais (evita o bug do prompt de pesquisa)
+    if groq_client and not precisa_pesquisar:
         try:
-            historico_temp = list(current_history)
-            if contexto_web:
-                historico_temp.append({"role": "user", "content": f"Contexto de pesquisa web para a minha pergunta:{contexto_web}"})
-                
             chat_completion = groq_client.chat.completions.create(
-                messages=historico_temp,
+                messages=current_history,
                 model="openai/gpt-oss-20b",
             )
             return chat_completion.choices[0].message.content, "Groq Fallback"
         except Exception as e_groq:
             print(f"Erro na Groq: {e_groq}")
             raise e_groq
+    
+    if precisa_pesquisar and contexto_web:
+        return f"Mestre, as IAs estão tímidas hoje, mas os dados da web são:\n\n{dados_web}", "DuckDuckGo Direto"
     
     return "Epa, fiquei sem IAs disponíveis!", "Nenhuma"
 
@@ -221,7 +230,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 3.0 com Busca Forçada online!", 200
+    return "Robozim 3.0 com Pesquisa Isolada online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
