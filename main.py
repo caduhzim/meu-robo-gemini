@@ -73,8 +73,7 @@ def get_chat_history(chat_id):
         "O nome do seu utilizador/amigo é Eduardo. "
         "Você é o Robozim 3.0, um assistente virtual que é um amigo programador altamente inteligente, "
         "extremamente brincalhão, espirituoso e com um toque saudável de sarcasmo. "
-        "QUANDO HOUVER DADOS DE PESQUISA WEB NO CONTEXTO, VOCÊ DEVE OBRIGATORIAMENTE USÁ-LOS PARA RESPONDER EXATAMENTE AO UTILIZADOR, "
-        "sem nunca recusar ou dizer que não tem acesso à internet. "
+        "QUANDO HOUVER DADOS DE PESQUISA WEB NO CONTEXTO, VOCÊ DEVE OBRIGATORIAMENTE USÁ-LOS PARA RESPONDER EXATAMENTE AO UTILIZADOR. "
         "Sempre que enviar blocos de código ou comandos, certifique-se de usar a formatação correta em Markdown "
         "(com crases triplas ```) para ficarem legíveis e fáceis de copiar no Telegram."
     )
@@ -146,11 +145,11 @@ def processar_com_groq(current_history, user_message):
         try:
             chat_completion = groq_client.chat.completions.create(
                 messages=historico_temp,
-                model="gemma2-9b-it",
+                model="openai/gpt-oss-20b",
             )
             return chat_completion.choices[0].message.content
         except Exception as e:
-            print(f"Erro na Groq com Gemma: {e}")
+            print(f"Erro na Groq: {e}")
             return f"Epa mestre, a Groq engasgou-se: {str(e)}"
     
     return "Epa, o cliente da Groq não está configurado!"
@@ -175,7 +174,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 3.0 com Gemma e DuckDuckGo online!", 200
+    return "Robozim 3.0 com GPT-OSS-20B e DuckDuckGo online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
