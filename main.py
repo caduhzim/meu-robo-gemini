@@ -14,7 +14,7 @@ groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
 def get_db_connection():
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 def init_db():
     try:
@@ -118,14 +118,15 @@ def webhook():
             enviar_mensagem_telegram(chat_id, reply_text)
             
         except Exception as e:
-            print(f"Erro no processamento: {e}")
-            enviar_mensagem_telegram(chat_id, "Epa, o Llama deu um soluço ao pensar. Podes repetir?")
+            error_msg = f"ERRO EXATO: {str(e)}"
+            print(error_msg)
+            enviar_mensagem_telegram(chat_id, error_msg)
             
     return "ok", 200
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 2.0 Llama online!", 200
+    return "Robozim 2.0 Llama online com debug ativo!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
