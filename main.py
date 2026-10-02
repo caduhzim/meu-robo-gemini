@@ -72,7 +72,8 @@ def get_chat_history(chat_id):
         "O nome do seu utilizador/amigo é Carlos Eduardo (mas pode tratá-lo por Carlos ou Eduardo). "
         "Você é o Robozim 2.0, um assistente virtual que é um amigo programador altamente inteligente, "
         "extremamente brincalhão, espirituoso e com um toque saudável de sarcasmo. "
-        "Você adora tecnologia, piadas geeks e resolve problemas técnicos com precisão."
+        "Sempre que enviar blocos de código ou comandos, certifique-se de usar a formatação correta em Markdown "
+        "(com crases triplas ```) para ficarem legíveis e fáceis de copiar no Telegram."
     )
     
     history = [{"role": "system", "content": system_prompt}]
@@ -89,12 +90,27 @@ def save_message(chat_id, role, content):
     cursor.close()
     conn.close()
 
-def send_telegram_message(chat_id, text):
+def enviar_mensagem_telegram(chat_id, text):
+    """
+    Envia a mensagem para o Telegram aplicando formatação segura em MarkdownV2 ou Markdown standard,
+    evitando que falhas de sintaxe na resposta da IA bloqueiem o envio.
+    """
     payload = {
         "chat_id": chat_id,
-        "text": text
+        "text": text,
+        "parse_mode": "Markdown"
     }
-    requests.post(TELEGRAM_API_URL, json=payload)
+    
+    response = requests.post(TELEGRAM_API_URL, json=payload)
+    
+    # Se o Telegram rejeitar por causa de algum caractere mal formatado em Markdown, 
+    # faz um fallback e envia como texto normal para nunca perder a resposta.
+    if response.status_code != 200:
+        payload_fallback = {
+            "chat_id": chat_id,
+            "text": text
+        }
+        requests.post(TELEGRAM_API_URL, json=payload_fallback)
 
 def escolher_ia_e_responder(current_history, user_message):
     palavras_codigo = ["python", "código", "erro", "bug", "função", "script", "api", "banco de dados", "sql", "flask", "render", "nome"]
@@ -132,31 +148,31 @@ def webhook():
         user_message = data["message"]["text"]
         
         try:
-            # 1. PRIMEIRO guardamos a mensagem do utilizador na Supabase
+            # 1. Guarda a mensagem do utilizador na Supabase
             save_message(chat_id, "user", user_message)
             
-            # 2. DEPOIS buscamos o histórico completo (que já inclui a mensagem atual)
+            # 2. Busca o histórico atualizado
             current_history = get_chat_history(chat_id)
             
-            # 3. Geramos a resposta com a IA escolhida
+            # 3. Gera a resposta com a IA ideal
             reply_text, ia_usada = escolher_ia_e_responder(current_history, user_message)
             
-            # 4. Guardamos a resposta do assistente na Supabase
+            # 4. Guarda a resposta do assistente na Supabase
             save_message(chat_id, "assistant", reply_text)
             
-            # 5. Enviamos a resposta para o Telegram
-            send_telegram_message(chat_id, reply_text)
+            # 5. Envia formatado para o Telegram
+            enviar_mensagem_telegram(chat_id, reply_text)
             
         except Exception as e:
             error_msg = f"Erro ao processar a mensagem: {str(e)}"
             print(error_msg)
-            send_telegram_message(chat_id, error_msg)
+            enviar_mensagem_telegram(chat_id, error_msg)
             
     return "ok", 200
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 2.0 com Roteador Multi-IA online!", 200
+    return "Robozim 2.0 com Roteador e Formatação Inteligente online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
