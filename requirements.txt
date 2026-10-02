@@ -1,7 +1,5 @@
-duckduckgo_search==5.3.1
 flask
-groq
-google-generativeai
-psycopg2-binary
 requests
+groq
+supabase
 
