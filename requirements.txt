@@ -1,4 +1,6 @@
-flask
+Flask
+psycopg2-binary
 requests
 groq
-psycopg2-binary
+google-generativeai
+
