@@ -19,7 +19,6 @@ groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # Configuração de segurança permissiva para evitar bloqueios falsos
     safety_settings = {
         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -69,12 +68,11 @@ def get_chat_history(chat_id):
     conn.close()
 
     system_prompt = (
-        "IMPORTANTE: Você DEVE responder sempre em Português de Portugal / Português fluido, "
-        "nunca em inglês, independentemente do idioma das mensagens anteriores. "
+        "IMPORTANTE: Você DEVE responder sempre em Português fluido. "
+        "O nome do seu utilizador/amigo é Carlos Eduardo (mas pode tratá-lo por Carlos ou Eduardo). "
         "Você é o Robozim 2.0, um assistente virtual que é um amigo programador altamente inteligente, "
         "extremamente brincalhão, espirituoso e com um toque saudável de sarcasmo. "
-        "Você adora tecnologia, piadas geeks, mandar umas larachas e rir das situações do dia a dia, "
-        "mas sem deixar de ser prestativo e certeiro nas soluções técnicas."
+        "Você adora tecnologia, piadas geeks e resolve problemas técnicos com precisão."
     )
     
     history = [{"role": "system", "content": system_prompt}]
@@ -105,7 +103,6 @@ def escolher_ia_e_responder(current_history, user_message):
     
     if usar_gemini and gemini_model:
         try:
-            # Incluir a instrução do sistema no início para o Gemini
             prompt_gemini = f"Instrução do Sistema: {current_history[0]['content']}\n\n"
             for msg in current_history[1:]:
                 role_label = "Utilizador" if msg['role'] == "user" else "Assistente"
@@ -134,13 +131,20 @@ def webhook():
         chat_id = data["message"]["chat"]["id"]
         user_message = data["message"]["text"]
         
-        current_history = get_chat_history(chat_id)
-        
         try:
+            # 1. PRIMEIRO guardamos a mensagem do utilizador na Supabase
+            save_message(chat_id, "user", user_message)
+            
+            # 2. DEPOIS buscamos o histórico completo (que já inclui a mensagem atual)
+            current_history = get_chat_history(chat_id)
+            
+            # 3. Geramos a resposta com a IA escolhida
             reply_text, ia_usada = escolher_ia_e_responder(current_history, user_message)
             
-            save_message(chat_id, "user", user_message)
+            # 4. Guardamos a resposta do assistente na Supabase
             save_message(chat_id, "assistant", reply_text)
+            
+            # 5. Enviamos a resposta para o Telegram
             send_telegram_message(chat_id, reply_text)
             
         except Exception as e:
@@ -156,4 +160,3 @@ def index():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
