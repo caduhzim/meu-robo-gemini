@@ -89,9 +89,11 @@ def get_chat_history(chat_id):
 
     system_prompt = (
         "IMPORTANTE: Você DEVE responder sempre em Português fluido. "
-        "O nome do seu utilizador/amigo é Eduardo (mas pode tratá-lo por Carlos ou Eduardo). "
+        "O nome do seu utilizador/amigo é Eduardo. "
         "Você é o Robozim 3.0, um assistente virtual que é um amigo programador altamente inteligente, "
         "extremamente brincalhão, espirituoso e com um toque saudável de sarcasmo. "
+        "Sempre que a informação da web for fornecida no contexto, utilize-a obrigatoriamente para dar a resposta exata ao utilizador, "
+        "sem dizer que não tem acesso a dados em tempo real. "
         "Sempre que enviar blocos de código ou comandos, certifique-se de usar a formatação correta em Markdown "
         "(com crases triplas ```) para ficarem legíveis e fáceis de copiar no Telegram."
     )
@@ -164,12 +166,10 @@ def escolher_ia_e_responder(current_history, user_message):
         print(f"A pesquisar na web por: {user_message}")
         dados_web = pesquisar_duckduckgo(user_message)
         if dados_web:
-            contexto_web = f"\n\n[Informação obtida recentemente na web para ajudar na resposta]:\n{dados_web}"
+            contexto_web = f"\n\n[DADOS REAIS OBTIDOS NA WEB AGORA]:\n{dados_web}\nUsa obrigatoriamente estes dados para responder ao utilizador sem inventar."
 
-    palavras_codigo = ["python", "código", "erro", "bug", "função", "script", "api", "banco de dados", "sql", "flask", "render", "nome"]
-    usar_gemini = any(p in user_message.lower() for p in palavras_codigo) or precisa_pesquisar
-    
-    if usar_gemini and gemini_model:
+    # Tentar Gemini primeiro
+    if gemini_model:
         try:
             prompt_gemini = f"Instrução do Sistema: {current_history[0]['content']}{contexto_web}\n\n"
             for msg in current_history[1:]:
@@ -178,23 +178,25 @@ def escolher_ia_e_responder(current_history, user_message):
             prompt_gemini += f"Utilizador: {user_message}\nAssistente:"
             
             response = gemini_model.generate_content(prompt_gemini)
-            return response.text, "Gemini (Com Web Search)"
+            if response and response.text:
+                return response.text, "Gemini"
         except Exception as e:
-            print(f"Gemini falhou ou sem tokens. A alternar para a Groq com o contexto web: {e}")
-            
+            print(f"Gemini falhou: {e}. A passar para a Groq...")
+
+    # Fallback para a Groq com injeção direta no histórico
     if groq_client:
         try:
             historico_temp = list(current_history)
             if contexto_web:
-                historico_temp.append({"role": "system", "content": f"Usa esta informação da web para responder ao utilizador:{contexto_web}"})
+                historico_temp.append({"role": "user", "content": f"Contexto de pesquisa web para a minha pergunta:{contexto_web}"})
                 
             chat_completion = groq_client.chat.completions.create(
                 messages=historico_temp,
                 model="openai/gpt-oss-20b",
             )
-            return chat_completion.choices[0].message.content, "Groq (Com Web Search Fallback)"
+            return chat_completion.choices[0].message.content, "Groq Fallback"
         except Exception as e_groq:
-            print(f"Erro no modelo na Groq: {e_groq}")
+            print(f"Erro na Groq: {e_groq}")
             raise e_groq
     
     return "Epa, fiquei sem IAs disponíveis!", "Nenhuma"
@@ -219,7 +221,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 3.0 com Fallback Inteligente e DuckDuckGo online!", 200
+    return "Robozim 3.0 com Busca Forçada online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
