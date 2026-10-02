@@ -1,3 +1,4 @@
+cat << 'EOF' > main.py
 import os
 import psycopg2
 import requests
@@ -7,7 +8,6 @@ import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from duckduckgo_search import DDGS
 
-# Credenciais e Tokens
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -15,7 +15,6 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 
 app = Flask(__name__)
 
-# Inicializar clientes das IAs
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 if GEMINI_API_KEY:
@@ -118,9 +117,7 @@ def enviar_mensagem_telegram(chat_id, text):
         "text": text,
         "parse_mode": "Markdown"
     }
-    
     response = requests.post(TELEGRAM_API_URL, json=payload)
-    
     if response.status_code != 200:
         payload_fallback = {
             "chat_id": chat_id,
@@ -173,6 +170,7 @@ def escolher_ia_e_responder(current_history, user_message):
     palavras_codigo = ["python", "código", "erro", "bug", "função", "script", "api", "banco de dados", "sql", "flask", "render", "nome"]
     usar_gemini = any(p in user_message.lower() for p in palavras_codigo) or precisa_pesquisar
     
+    # Tentar Gemini primeiro se aplicável
     if usar_gemini and gemini_model:
         try:
             prompt_gemini = f"Instrução do Sistema: {current_history[0]['content']}{contexto_web}\n\n"
@@ -184,19 +182,20 @@ def escolher_ia_e_responder(current_history, user_message):
             response = gemini_model.generate_content(prompt_gemini)
             return response.text, "Gemini (Com Web Search)"
         except Exception as e:
-            print(f"Gemini falhou. A fazer fallback automático para a Groq: {e}")
+            print(f"Gemini falhou ou sem tokens. A alternar para a Groq com o contexto web: {e}")
             
+    # Fallback ou execução direta na Groq (agora injetando o contexto web se houver)
     if groq_client:
         try:
             historico_temp = list(current_history)
             if contexto_web:
-                historico_temp.append({"role": "system", "content": contexto_web})
+                historico_temp.append({"role": "system", "content": f"Usa esta informação da web para responder ao utilizador:{contexto_web}"})
                 
             chat_completion = groq_client.chat.completions.create(
                 messages=historico_temp,
                 model="openai/gpt-oss-20b",
             )
-            return chat_completion.choices[0].message.content, "Groq (GPT OSS)"
+            return chat_completion.choices[0].message.content, "Groq (Com Web Search Fallback)"
         except Exception as e_groq:
             print(f"Erro no modelo na Groq: {e_groq}")
             raise e_groq
@@ -206,28 +205,26 @@ def escolher_ia_e_responder(current_history, user_message):
 @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
 def webhook():
     data = flask_request.get_json(force=True)
-    
     if "message" in data and "text" in data["message"]:
         chat_id = data["message"]["chat"]["id"]
         user_message = data["message"]["text"]
-        
         try:
             save_message(chat_id, "user", user_message)
             current_history = get_chat_history(chat_id)
             reply_text, ia_usada = escolher_ia_e_responder(current_history, user_message)
             save_message(chat_id, "assistant", reply_text)
             enviar_mensagem_telegram(chat_id, reply_text)
-            
         except Exception as e:
             error_msg = f"Erro ao processar a mensagem: {str(e)}"
             print(error_msg)
             enviar_mensagem_telegram(chat_id, error_msg)
-            
     return "ok", 200
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 3.0 com Fallback, Gemini e DuckDuckGo online!", 200
+    return "Robozim 3.0 com Fallback Inteligente e DuckDuckGo online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+EOF
+
