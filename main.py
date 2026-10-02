@@ -125,39 +125,9 @@ def escolher_ia_e_responder(current_history, user_message):
             print(f"Erro no Gemini, a fazer fallback para a Groq: {e}")
             
     if groq_client:
-        chat_completion = groq_client.chat.completions.create(
-            messages=current_history,
-            model="llama-3.1-8b-instant",
-        )
-        return chat_completion.choices[0].message.content, "Groq (Automático)"
-    
-    return "Epa, fiquei sem IAs disponíveis!", "Nenhuma"
-
-@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
-def webhook():
-    data = flask_request.get_json(force=True)
-    
-    if "message" in data and "text" in data["message"]:
-        chat_id = data["message"]["chat"]["id"]
-        user_message = data["message"]["text"]
-        
         try:
-            save_message(chat_id, "user", user_message)
-            current_history = get_chat_history(chat_id)
-            reply_text, ia_usada = escolher_ia_e_responder(current_history, user_message)
-            save_message(chat_id, "assistant", reply_text)
-            enviar_mensagem_telegram(chat_id, reply_text)
-            
-        except Exception as e:
-            error_msg = f"Erro ao processar a mensagem: {str(e)}"
-            print(error_msg)
-            enviar_mensagem_telegram(chat_id, error_msg)
-            
-    return "ok", 200
-
-@app.route("/", methods=["GET"])
-def index():
-    return "Robozim 3.0 com Roteador Dual (Gemini + Groq) online!", 200
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+            chat_completion = groq_client.chat.completions.create(
+                messages=current_history,
+                model="openai/gpt-oss-20b",
+            )
+            return chat_completion.choices[0].message.content, "Gro
