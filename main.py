@@ -5,6 +5,7 @@ from flask import Flask, request as flask_request
 from groq import Groq
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
+from duckduckgo_search import ddg
 
 # Credenciais e Tokens
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -50,6 +51,24 @@ def init_db():
     conn.close()
 
 init_db()
+
+# --- Função de Pesquisa DuckDuckGo ---
+def pesquisar_duckduckgo(termo):
+    try:
+        resultados = ddg(termo, max_results=3)
+        texto_final = ""
+        if resultados:
+            for r in resultados:
+                titulo = r.get('title', 'Sem título')
+                corpo = r.get('body', 'Sem descrição')
+                link = r.get('href', '#')
+                texto_final += f"- {titulo}: {corpo} ({link})\n"
+            return texto_final
+        else:
+            return ""
+    except Exception as e:
+        print(f"Erro na pesquisa DuckDuckGo: {e}")
+        return ""
 
 def get_chat_history(chat_id):
     conn = get_db_connection()
@@ -107,30 +126,44 @@ def enviar_mensagem_telegram(chat_id, text):
         requests.post(TELEGRAM_API_URL, json=payload_fallback)
 
 def escolher_ia_e_responder(current_history, user_message):
+    # Verifica se a mensagem pede alguma pesquisa na web
+    palavras_pesquisa = ["pesquise", "pesquisa", "notícia", "notícias", "quem é", "quanto foi", "resultado", "jogou", "últimas", "procura"]
+    precisa_pesquisar = any(p in user_message.lower() for p in palavras_pesquisa)
+    
+    contexto_web = ""
+    if precisa_pesquisar:
+        print(A a pesquisar na web por: {user_message})
+        dados_web = pesquisar_duckduckgo(user_message)
+        if dados_web:
+            contexto_web = f"\n\n[Informação obtida recentemente na web para ajudar na resposta]:\n{dados_web}"
+
     palavras_codigo = ["python", "código", "erro", "bug", "função", "script", "api", "banco de dados", "sql", "flask", "render", "nome"]
+    usar_gemini = any(p in user_message.lower() for p in palavras_codigo) or precisa_pesquisar
     
-    usar_gemini = any(p in user_message.lower() for p in palavras_codigo)
-    
-    # Tenta usar o Gemini se for questão de código
+    # Tenta usar o Gemini se for questão de código ou pesquisa
     if usar_gemini and gemini_model:
         try:
-            prompt_gemini = f"Instrução do Sistema: {current_history[0]['content']}\n\n"
+            prompt_gemini = f"Instrução do Sistema: {current_history[0]['content']}{contexto_web}\n\n"
             for msg in current_history[1:]:
                 role_label = "Utilizador" if msg['role'] == "user" else "Assistente"
                 prompt_gemini += f"{role_label}: {msg['content']}\n"
             prompt_gemini += f"Utilizador: {user_message}\nAssistente:"
             
             response = gemini_model.generate_content(prompt_gemini)
-            return response.text, "Gemini (Automático)"
+            return response.text, "Gemini (Com Web Search)"
         except Exception as e:
-            print(f"Gemini falhou (limite/tokens/erro). A fazer fallback automático para a Groq: {e}")
-            # Se falhar aqui, o código continua e cai direto na Groq logo abaixo!
+            print(f"Gemini falhou. A fazer fallback automático para a Groq: {e}")
             
-    # Se não for código, ou se o Gemini falhou, a Groq (GPT OSS 20B) assume a responsabilidade
+    # Se falhar ou não for o caso, a Groq assume
     if groq_client:
         try:
+            # Se houver contexto web, injetamos na última mensagem ou no histórico temporário
+            historico_temp = list(current_history)
+            if contexto_web:
+                historico_temp.append({"role": "system", "content": contexto_web})
+                
             chat_completion = groq_client.chat.completions.create(
-                messages=current_history,
+                messages=historico_temp,
                 model="openai/gpt-oss-20b",
             )
             return chat_completion.choices[0].message.content, "Groq (GPT OSS)"
@@ -164,7 +197,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 3.0 com Fallback em Cascata online!", 200
+    return "Robozim 3.0 com Fallback e Pesquisa DuckDuckGo online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

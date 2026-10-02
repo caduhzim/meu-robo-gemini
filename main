@@ -125,20 +125,11 @@ def escolher_ia_e_responder(current_history, user_message):
             print(f"Erro no Gemini, a fazer fallback para a Groq: {e}")
             
     if groq_client:
-        try:
-            chat_completion = groq_client.chat.completions.create(
-                messages=current_history,
-                model="llama-3.3-70b-versatile",
-            )
-            return chat_completion.choices[0].message.content, "Groq (Llama 3.3 Versatile)"
-        except Exception as e_groq:
-            print(f"Erro no Llama 3.3, a tentar o fallback para Llama 3.1 8B Instant: {e_groq}")
-            # Fallback interno de segurança caso o 3.3 falhe
-            chat_completion_fallback = groq_client.chat.completions.create(
-                messages=current_history,
-                model="llama-3.1-8b-instant",
-            )
-            return chat_completion_fallback.choices[0].message.content, "Groq (Llama 3.1 Instant Fallback)"
+        chat_completion = groq_client.chat.completions.create(
+            messages=current_history,
+            model="llama-3.1-8b-instant",
+        )
+        return chat_completion.choices[0].message.content, "Groq (Automático)"
     
     return "Epa, fiquei sem IAs disponíveis!", "Nenhuma"
 
@@ -166,7 +157,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 3.0 com Groq Llama Versatile online!", 200
+    return "Robozim 3.0 com Roteador Dual (Gemini + Groq) online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
