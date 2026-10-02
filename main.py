@@ -38,7 +38,7 @@ def webhook():
             photo = message["photo"][-1] # Pega a maior resolução
             file_id = photo["file_id"]
             
-            # Obter caminho do ficheiro no Telegram (URL corrigido sem parênteses)
+            # Obter caminho do ficheiro no Telegram
             file_info_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getFile?file_id={file_id}"
             r = requests.get(file_info_url)
             file_path = r.json()["result"]["file_path"]
@@ -60,7 +60,7 @@ def webhook():
                     }
                 ],
                 max_completion_tokens=1024
-            ]
+            )
             resposta = chat_completion.choices[0].message.content
             enviar_mensagem_telegram(chat_id, resposta)
         except Exception as e:
@@ -84,7 +84,7 @@ def webhook():
                     }
                 ],
                 max_completion_tokens=1024
-            ]
+            )
             resposta = chat_completion.choices[0].message.content
             enviar_mensagem_telegram(chat_id, resposta)
         except Exception as e:
