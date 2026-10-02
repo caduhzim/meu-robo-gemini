@@ -126,6 +126,9 @@ def enviar_mensagem_telegram(chat_id, text):
         requests.post(TELEGRAM_API_URL, json=payload_fallback)
 
 def escolher_ia_e_responder(current_history, user_message):
-    # Verifica se a mensagem pede alguma pesquisa na web
     palavras_pesquisa = ["pesquise", "pesquisa", "notícia", "notícias", "quem é", "quanto foi", "resultado", "jogou", "últimas", "procura"]
-    precisa_pesquisar = any(p in user_message.lower() for p in
+    precisa_pesquisar = any(p in user_message.lower() for p in palavras_pesquisa)
+    
+    contexto_web = ""
+    if precisa_pesquisar:
+        print
