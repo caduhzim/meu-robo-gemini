@@ -1,4 +1,3 @@
-cat << 'EOF' > main.py
 import os
 import psycopg2
 import requests
@@ -170,7 +169,6 @@ def escolher_ia_e_responder(current_history, user_message):
     palavras_codigo = ["python", "código", "erro", "bug", "função", "script", "api", "banco de dados", "sql", "flask", "render", "nome"]
     usar_gemini = any(p in user_message.lower() for p in palavras_codigo) or precisa_pesquisar
     
-    # Tentar Gemini primeiro se aplicável
     if usar_gemini and gemini_model:
         try:
             prompt_gemini = f"Instrução do Sistema: {current_history[0]['content']}{contexto_web}\n\n"
@@ -184,7 +182,6 @@ def escolher_ia_e_responder(current_history, user_message):
         except Exception as e:
             print(f"Gemini falhou ou sem tokens. A alternar para a Groq com o contexto web: {e}")
             
-    # Fallback ou execução direta na Groq (agora injetando o contexto web se houver)
     if groq_client:
         try:
             historico_temp = list(current_history)
@@ -226,5 +223,3 @@ def index():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-EOF
-
