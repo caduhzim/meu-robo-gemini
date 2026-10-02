@@ -111,6 +111,7 @@ def escolher_ia_e_responder(current_history, user_message):
     
     usar_gemini = any(p in user_message.lower() for p in palavras_codigo)
     
+    # Tenta usar o Gemini se for questão de código
     if usar_gemini and gemini_model:
         try:
             prompt_gemini = f"Instrução do Sistema: {current_history[0]['content']}\n\n"
@@ -122,15 +123,17 @@ def escolher_ia_e_responder(current_history, user_message):
             response = gemini_model.generate_content(prompt_gemini)
             return response.text, "Gemini (Automático)"
         except Exception as e:
-            print(f"Erro no Gemini, a fazer fallback para a Groq: {e}")
+            print(f"Gemini falhou (limite/tokens/erro). A fazer fallback automático para a Groq: {e}")
+            # Se falhar aqui, o código continua e cai direto na Groq logo abaixo!
             
+    # Se não for código, ou se o Gemini falhou, a Groq (GPT OSS 20B) assume a responsabilidade
     if groq_client:
         try:
             chat_completion = groq_client.chat.completions.create(
                 messages=current_history,
                 model="openai/gpt-oss-20b",
             )
-            return chat_completion.choices[0].message.content, "Groq"
+            return chat_completion.choices[0].message.content, "Groq (GPT OSS)"
         except Exception as e_groq:
             print(f"Erro no modelo na Groq: {e_groq}")
             raise e_groq
@@ -161,7 +164,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 3.0 com Groq (GPT OSS 20B) online!", 200
+    return "Robozim 3.0 com Fallback em Cascata online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
