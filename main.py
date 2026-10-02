@@ -1,21 +1,16 @@
-rm main.py
-cat << 'EOF' > main.py
 import os
 import psycopg2
 import requests
 from flask import Flask, request as flask_request
 from groq import Groq
 
-# Credenciais essenciais
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 app = Flask(__name__)
 
-# Inicializar cliente da Groq
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
 def get_db_connection():
@@ -40,7 +35,6 @@ def init_db():
     except Exception as e:
         print(f"-> Erro ao inicializar a base de dados: {e}")
 
-# Inicializa a BD de forma segura
 init_db()
 
 def get_chat_history(chat_id):
@@ -106,15 +100,11 @@ def webhook():
         user_message = data["message"]["text"]
         
         try:
-            # 1. Guarda a mensagem do utilizador
             save_message(chat_id, "user", user_message)
-            
-            # 2. Obtém o histórico com a persona
             current_history = get_chat_history(chat_id)
             
-            # 3. Resposta via Groq (Llama-3.3-70b-versatile)
             if groq_client:
-                print(f"-> A enviar pedido para a Groq (Llama)...")
+                print("-> A enviar pedido para a Groq (Llama)...")
                 chat_completion = groq_client.chat.completions.create(
                     messages=current_history,
                     model="llama-3.3-70b-versatile",
@@ -122,23 +112,20 @@ def webhook():
                 )
                 reply_text = chat_completion.choices[0].message.content
             else:
-                reply_text = "Epa, a chave da Groq não está configurada no servidor!"
+                reply_text = "Epa, a chave da Groq não está configurada!"
             
-            # 4. Guarda a resposta e envia para o Telegram
             save_message(chat_id, "assistant", reply_text)
             enviar_mensagem_telegram(chat_id, reply_text)
             
         except Exception as e:
-            error_msg = f"Erro no processamento: {str(e)}"
-            print(error_msg)
-            enviar_mensagem_telegram(chat_id, "Epa, o Llama deu um soluço ao pensar. Podes repetir a pergunta?")
+            print(f"Erro no processamento: {e}")
+            enviar_mensagem_telegram(chat_id, "Epa, o Llama deu um soluço ao pensar. Podes repetir?")
             
     return "ok", 200
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 2.0 (Llama Only) online e blindado!", 200
+    return "Robozim 2.0 Llama online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-EOF
