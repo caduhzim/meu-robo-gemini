@@ -1,39 +1,20 @@
+rm main.py
+cat << 'EOF' > main.py
 import os
 import psycopg2
 import requests
 from flask import Flask, request as flask_request
 from groq import Groq
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
+# Credenciais essenciais
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 app = Flask(__name__)
 
+# Inicializar cliente da Groq
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    safety_settings = {
-        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-    }
-    generation_config = {
-        "temperature": 0.7,
-        "max_output_tokens": 2048,
-    }
-    gemini_model = genai.GenerativeModel(
-        'gemini-1.5-flash', 
-        safety_settings=safety_settings,
-        generation_config=generation_config
-    )
-else:
-    gemini_model = None
 
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
@@ -59,7 +40,7 @@ def init_db():
     except Exception as e:
         print(f"-> Erro ao inicializar a base de dados: {e}")
 
-# Inicializa a BD de forma segura sem crashar o app se houver falha momentânea
+# Inicializa a BD de forma segura
 init_db()
 
 def get_chat_history(chat_id):
@@ -116,42 +97,6 @@ def enviar_mensagem_telegram(chat_id, text):
     except Exception as e:
         print(f"Erro ao enviar para o Telegram: {e}")
 
-def escolher_ia_e_responder(current_history, user_message):
-    palavras_codigo = [
-        "python", "código", "erro", "bug", "função", "script", "api", 
-        "banco de dados", "sql", "flask", "render", "nome", "app", 
-        "aplicação", "sistema", "criar", "programa", "site", "oficina"
-    ]
-    
-    usar_gemini = any(p in user_message.lower() for p in palavras_codigo)
-    
-    if usar_gemini and gemini_model:
-        try:
-            prompt_gemini = f"Instrução do Sistema: {current_history[0]['content']}\n\n"
-            for msg in current_history[1:]:
-                role_label = "Utilizador" if msg['role'] == "user" else "Assistente"
-                prompt_gemini += f"{role_label}: {msg['content']}\n"
-            prompt_gemini += f"Utilizador: {user_message}\nAssistente:"
-            
-            response = gemini_model.generate_content(prompt_gemini)
-            if response and response.text:
-                return response.text, "Gemini"
-        except Exception as e:
-            print(f"Erro no Gemini: {e}")
-            
-    if groq_client:
-        try:
-            chat_completion = groq_client.chat.completions.create(
-                messages=current_history,
-                model="llama-3.3-70b-versatile",
-                timeout=30.0 
-            )
-            return chat_completion.choices[0].message.content, "Groq"
-        except Exception as e:
-            print(f"Erro na Groq: {e}")
-            
-    return "Epa, rebentou tudo por aqui e fiquei sem IAs disponíveis! Tenta de novo.", "Nenhuma"
-
 @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
 def webhook():
     data = flask_request.get_json(force=True)
@@ -161,20 +106,39 @@ def webhook():
         user_message = data["message"]["text"]
         
         try:
+            # 1. Guarda a mensagem do utilizador
             save_message(chat_id, "user", user_message)
+            
+            # 2. Obtém o histórico com a persona
             current_history = get_chat_history(chat_id)
-            reply_text, ia_usada = escolher_ia_e_responder(current_history, user_message)
+            
+            # 3. Resposta via Groq (Llama-3.3-70b-versatile)
+            if groq_client:
+                print(f"-> A enviar pedido para a Groq (Llama)...")
+                chat_completion = groq_client.chat.completions.create(
+                    messages=current_history,
+                    model="llama-3.3-70b-versatile",
+                    timeout=30.0
+                )
+                reply_text = chat_completion.choices[0].message.content
+            else:
+                reply_text = "Epa, a chave da Groq não está configurada no servidor!"
+            
+            # 4. Guarda a resposta e envia para o Telegram
             save_message(chat_id, "assistant", reply_text)
             enviar_mensagem_telegram(chat_id, reply_text)
+            
         except Exception as e:
-            print(f"Erro no webhook: {e}")
-            enviar_mensagem_telegram(chat_id, "Epa, deu um soluço técnico aqui no servidor. Podes repetir?")
+            error_msg = f"Erro no processamento: {str(e)}"
+            print(error_msg)
+            enviar_mensagem_telegram(chat_id, "Epa, o Llama deu um soluço ao pensar. Podes repetir a pergunta?")
             
     return "ok", 200
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 2.0 Llama online e seguro!", 200
+    return "Robozim 2.0 (Llama Only) online e blindado!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+EOF
