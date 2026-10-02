@@ -106,7 +106,7 @@ def processar_com_groq(history, user_message, image_url=None):
     return response.choices[0].message.content
 
 def enviar_mensagem_telegram(chat_id, text):
-    url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
     requests.post(url, json=payload)
 
