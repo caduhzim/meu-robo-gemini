@@ -115,7 +115,7 @@ def processar_com_groq(current_history, user_message):
         "notícia", "notícias", "últimas", "recente", "recentes", "hoje", "ontem", "amanhã", 
         "agora", "atual", "atualizado", "última hora", "lançamento", "lançou", "saiu", 
         "novidade", "novidades", "estado atual", "agenda", "calendário", "data", "quando",
-        "quem é", "quem foi", "quem são", "o que é", "o what foi", "o que são", 
+        "quem é", "quem foi", "quem são", "o que é", "o que foi", "o que são", 
         "qual é", "quais são", "onde fica", "onde é", "onde encontrar", "quando foi", 
         "quando aconteceu", "quanto foi", "quantos são", "como funciona", "como fazer", 
         "por que", "porque", "qual a história", "significado", "definição",
@@ -146,11 +146,11 @@ def processar_com_groq(current_history, user_message):
         try:
             chat_completion = groq_client.chat.completions.create(
                 messages=historico_temp,
-                model="mixtral-8x7b-32768",
+                model="gemma2-9b-it",
             )
             return chat_completion.choices[0].message.content
         except Exception as e:
-            print(f"Erro na Groq com Mixtral: {e}")
+            print(f"Erro na Groq com Gemma: {e}")
             return f"Epa mestre, a Groq engasgou-se: {str(e)}"
     
     return "Epa, o cliente da Groq não está configurado!"
@@ -175,7 +175,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Robozim 3.0 com Mixtral e DuckDuckGo online!", 200
+    return "Robozim 3.0 com Gemma e DuckDuckGo online!", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
