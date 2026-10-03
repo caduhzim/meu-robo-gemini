@@ -70,8 +70,9 @@ def perguntar_ia(chat_id, mensagem_usuario):
 
     try:
         if MODELO_ATUAL == "gemini" and gemini_client:
+            # Modelo atualizado conforme exigência da API
             response = gemini_client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.8-flash",
                 contents=prompt_completo
             )
             resposta = response.text
