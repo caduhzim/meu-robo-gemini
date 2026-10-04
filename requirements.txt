@@ -1,5 +1,2 @@
-flask
-google-genai
-groq
-supabase
-requests
+pytelegrambotapi
+huggingface_hub
