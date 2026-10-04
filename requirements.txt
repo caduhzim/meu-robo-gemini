@@ -1,3 +1,4 @@
 pytelegrambotapi
 huggingface_hub
 supabase
+flask
