@@ -13,7 +13,6 @@ RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
 bot = telebot.TeleBot(BOT_TOKEN)
 
 client = InferenceClient(
-    model="mistralai/Mistral-7B-Instruct-v0.3",
     token=HF_TOKEN
 )
 
@@ -44,18 +43,21 @@ def receive_webhook():
 def handle_message(user_message):
     try:
         bot.send_chat_action(user_message.chat.id, 'typing')
-        response = client.chat_completion(
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message.text}
-            ],
-            max_tokens=500,
+        
+        # Formatamos o prompt com a estrutura que o modelo Mistral-Instruct espera
+        prompt = f"[INST] {SYSTEM_PROMPT}\n\nUsuário: {user_message.text} [/INST]"
+        
+        response = client.text_generation(
+            prompt=prompt,
+            model="mistralai/Mistral-7B-Instruct-v0.3",
+            max_new_tokens=500,
             temperature=0.7
         )
-        reply_text = response.choices[0].message.content
+        
+        reply_text = response.strip()
         bot.reply_to(user_message, reply_text)
     except Exception as e:
-        bot.reply_to(user_message, f"Deu ruim no sistema: {e}. Provavelmente a culpa é da sua última linha de código.")
+        bot.reply_to(user_message, f"Deu ruim no sistema: {e}. A culpa é dessa sua API esquisita.")
 
 # --- Configurar o Webhook no arranque ---
 def setup_webhook():
