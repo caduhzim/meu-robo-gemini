@@ -1,7 +1,7 @@
 import os
-import requests
 import telebot
-from flask import Flask, request as flask_request
+from flask import Flask, request
+from huggingface_hub import InferenceClient
 
 # --- Configuração do Flask e do Bot ---
 app = Flask(__name__)
@@ -12,9 +12,11 @@ RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Vamos usar a API HTTP direta da Hugging Face para evitar bloqueios de clientes internos
-API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"
-headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+# Usamos o cliente oficial da Hugging Face com um modelo focado em conversação
+client = InferenceClient(
+    model="HuggingFaceH4/zephyr-7b-beta",
+    token=HF_TOKEN
+)
 
 SYSTEM_PROMPT = (
     "Você é um programador experiente, extremamente sarcástico, brincalhão e um pouco "
@@ -25,13 +27,13 @@ SYSTEM_PROMPT = (
 # --- Rota principal para o Render saber que o site está vivo ---
 @app.route('/')
 def home():
-    return "Bot do Telegram com Webhook ativo e funcionando via Hugging Face!"
+    return "Bot do Telegram com Webhook ativo e Hugging Face oficial!"
 
 # --- Rota do Webhook que o Telegram vai chamar ---
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def receive_webhook():
-    if flask_request.headers.get('content-type') == 'application/json':
-        json_string = flask_request.get_data().decode('utf-8')
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
         bot.process_new_updates([update])
         return "OK", 200
@@ -44,25 +46,17 @@ def handle_message(user_message):
     try:
         bot.send_chat_action(user_message.chat.id, 'typing')
         
-        # Estrutura de prompt padrão que o Mistral adora
-        prompt = f"[INST] {SYSTEM_PROMPT}\n\nUsuário: {user_message.text} [/INST]"
+        # Usamos o método de chat oficial do cliente da Hugging Face
+        response = client.chat_completion(
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_message.text}
+            ],
+            max_tokens=500,
+            temperature=0.7
+        )
         
-        payload = {
-            "inputs": prompt,
-            "parameters": {"max_new_tokens": 500, "temperature": 0.7, "return_full_text": False}
-        }
-        
-        response = requests.post(API_URL, headers=headers, json=payload)
-        res_json = response.json()
-        
-        # Tratativa da resposta da API HTTP da Hugging Face
-        if isinstance(res_json, list) and len(res_json) > 0:
-            reply_text = res_json[0].get("generated_text", "O modelo gerou um vazio existencial.")
-        elif isinstance(res_json, dict) and "error" in res_json:
-            reply_text = f"Erro da Hugging Face: {res_json['error']}"
-        else:
-            reply_text = str(res_json)
-            
+        reply_text = response.choices[0].message.content
         bot.reply_to(user_message, reply_text.strip())
     except Exception as e:
         bot.reply_to(user_message, f"Deu ruim no sistema: {e}. A culpa é dessa sua API esquisita.")
@@ -81,3 +75,4 @@ if __name__ == "__main__":
     setup_webhook()
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
