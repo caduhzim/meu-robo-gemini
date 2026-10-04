@@ -12,22 +12,24 @@ RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Usamos o cliente oficial da Hugging Face com um modelo focado em conversação
+# Modelo Qwen3-8B-Uncensored
 client = InferenceClient(
-    model="HuggingFaceH4/zephyr-7b-beta",
+    model="braindao/Qwen3-8B-Uncensored",
     token=HF_TOKEN
 )
 
 SYSTEM_PROMPT = (
-    "Você é um programador experiente, extremamente sarcástico, brincalhão e um pouco "
-    "impaciente com erros básicos de código. Responda sempre em português do Brasil, "
-    "com piadas secas sobre código, mas ajude no final a resolver o problema do usuário."
+    "Você é o Dudis, um programador experiente, extremamente "
+    "sarcástico, brincalhão e um pouco impaciente com erros básicos "
+    "de código. Responda sempre em português do Brasil, com piadas "
+    "secas sobre código, mas ajude no final a resolver o problema "
+    "do usuário."
 )
 
 # --- Rota principal para o Render saber que o site está vivo ---
 @app.route('/')
 def home():
-    return "Bot do Telegram com Webhook ativo e Hugging Face oficial!"
+    return "Bot do Telegram com Webhook ativo e Qwen3-8B-Uncensored!"
 
 # --- Rota do Webhook que o Telegram vai chamar ---
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
@@ -45,8 +47,8 @@ def receive_webhook():
 def handle_message(user_message):
     try:
         bot.send_chat_action(user_message.chat.id, 'typing')
-        
-        # Usamos o método de chat oficial do cliente da Hugging Face
+
+        # Chamada ao Qwen3-8B-Uncensored
         response = client.chat_completion(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -55,11 +57,15 @@ def handle_message(user_message):
             max_tokens=500,
             temperature=0.7
         )
-        
+
         reply_text = response.choices[0].message.content
         bot.reply_to(user_message, reply_text.strip())
+
     except Exception as e:
-        bot.reply_to(user_message, f"Deu ruim no sistema: {e}. A culpa é dessa sua API esquisita.")
+        bot.reply_to(
+            user_message,
+            f"Deu ruim no sistema: {e}. A culpa é dessa sua API esquisita."
+        )
 
 # --- Configurar o Webhook no arranque ---
 def setup_webhook():
@@ -69,10 +75,12 @@ def setup_webhook():
         bot.set_webhook(url=webhook_url)
         print(f"Webhook configurado com sucesso para: {webhook_url}")
     else:
-        print("Aviso: RENDER_EXTERNAL_URL não encontrada nas variáveis de ambiente.")
+        print(
+            "Aviso: RENDER_EXTERNAL_URL não encontrada "
+            "nas variáveis de ambiente."
+        )
 
 if __name__ == "__main__":
     setup_webhook()
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-
